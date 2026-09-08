@@ -1,0 +1,1191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SlopeGuard — NER Landslide Risk Intelligence</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+
+<style>
+  :root{
+    --bg:        #0B1512;
+    --bg-2:      #0F1C18;
+    --surface:   #14211C;
+    --surface-2: #192B24;
+    --border:    #24362E;
+    --border-2:  #2E463C;
+    --text:      #E7EFE9;
+    --text-dim:  #9BAEA4;
+    --text-faint:#647069;
+    --accent:    #35D28A;
+    --accent-dim:#1E7A52;
+    --low:       #4ADE80;
+    --moderate:  #F2C94C;
+    --high:      #F2994A;
+    --veryhigh:  #EB5757;
+    --info:      #56B6F5;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg);
+    color:var(--text);
+    font-family:'Space Grotesk', system-ui, sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .mono{ font-family:'JetBrains Mono', monospace; }
+  ::selection{ background:var(--accent-dim); color:#fff; }
+  a{ color:inherit; }
+
+  /* ---------- topo background texture ---------- */
+  .topo-bg{
+    position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background-image:
+      repeating-radial-gradient(circle at 15% 20%, rgba(53,210,138,0.05) 0px, rgba(53,210,138,0.05) 1px, transparent 1px, transparent 46px),
+      repeating-radial-gradient(circle at 85% 80%, rgba(53,210,138,0.04) 0px, rgba(53,210,138,0.04) 1px, transparent 1px, transparent 38px);
+    background-color:var(--bg);
+  }
+
+  /* ---------- top status bar ---------- */
+  .statusbar{
+    background:#08110E; border-bottom:1px solid var(--border);
+    font-size:11px; letter-spacing:.02em; color:var(--text-faint);
+    display:flex; align-items:center; justify-content:space-between;
+    padding:5px 20px; font-family:'JetBrains Mono', monospace;
+  }
+  .statusbar .dot{ width:6px; height:6px; border-radius:50%; background:var(--accent); display:inline-block; margin-right:6px; box-shadow:0 0 6px var(--accent); }
+  .statusbar .seg{ display:flex; align-items:center; gap:18px; }
+
+  /* ---------- header ---------- */
+  header.top{
+    background:var(--bg-2); border-bottom:1px solid var(--border);
+    padding:14px 24px; display:flex; align-items:center; justify-content:space-between; gap:20px;
+    position:sticky; top:0; z-index:40;
+  }
+  .brand{ display:flex; align-items:center; gap:12px; }
+  .brand-mark{
+    width:38px; height:38px; border:1.5px solid var(--accent); position:relative; flex:none;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .brand-mark::before, .brand-mark::after{
+    content:''; position:absolute; width:6px; height:6px; border:1px solid var(--accent);
+  }
+  .brand-mark::before{ top:-4px; left:-4px; border-right:none; border-bottom:none; }
+  .brand-mark::after{ bottom:-4px; right:-4px; border-left:none; border-top:none; }
+  .brand-mark svg{ width:20px; height:20px; }
+  .brand-name{ font-weight:700; font-size:19px; letter-spacing:.01em; line-height:1.1; }
+  .brand-sub{ font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; margin-top:2px; }
+
+  nav.mainnav{ display:flex; gap:2px; }
+  nav.mainnav button{
+    background:transparent; border:1px solid transparent; color:var(--text-dim);
+    font-family:'Space Grotesk',sans-serif; font-size:13.5px; padding:8px 13px; cursor:pointer;
+    border-radius:2px; transition:all .15s ease;
+  }
+  nav.mainnav button:hover{ color:var(--text); background:var(--surface); }
+  nav.mainnav button.active{ color:var(--bg); background:var(--accent); font-weight:600; }
+
+  .header-right{ display:flex; align-items:center; gap:14px; font-size:12px; color:var(--text-dim); }
+  .demo-pill{
+    background:rgba(242,153,74,0.12); border:1px solid rgba(242,153,74,0.4); color:var(--high);
+    font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.06em;
+    padding:4px 9px; display:flex; align-items:center; gap:6px;
+  }
+  .demo-pill .dot{ width:5px; height:5px; background:var(--high); border-radius:50%; }
+  .avatar{ width:30px; height:30px; border:1px solid var(--border-2); background:var(--surface-2); display:flex; align-items:center; justify-content:center; font-size:12px; font-family:'JetBrains Mono',monospace; }
+
+  main{ max-width:1500px; margin:0 auto; padding:22px 24px 60px; }
+  .view{ display:none; }
+  .view.active{ display:block; }
+
+  /* ---------- hero ---------- */
+  .hero{ margin-bottom:22px; }
+  .hero h1{ font-size:28px; margin:0 0 6px; font-weight:700; letter-spacing:-.01em; }
+  .hero p.lead{ color:var(--text-dim); font-size:14.5px; margin:0 0 18px; max-width:640px; line-height:1.55; }
+
+  .stat-grid{ display:grid; grid-template-columns:repeat(6,1fr); gap:12px; }
+  @media (max-width:1180px){ .stat-grid{ grid-template-columns:repeat(3,1fr); } }
+  @media (max-width:640px){ .stat-grid{ grid-template-columns:repeat(2,1fr); } }
+  .stat-card{
+    background:var(--surface); border:1px solid var(--border); padding:14px 15px;
+    position:relative; overflow:hidden;
+  }
+  .stat-card .label{ font-size:10.5px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; font-family:'JetBrains Mono',monospace; margin-bottom:8px; }
+  .stat-card .value{ font-size:25px; font-weight:700; font-family:'JetBrains Mono',monospace; line-height:1; }
+  .stat-card .value span.unit{ font-size:13px; color:var(--text-dim); font-weight:500; margin-left:3px; }
+  .stat-card .delta{ font-size:11px; margin-top:6px; color:var(--text-dim); }
+  .stat-card.accentbar{ border-top:2px solid var(--accent); }
+  .stat-card.warnbar{ border-top:2px solid var(--high); }
+  .stat-card.criticalbar{ border-top:2px solid var(--veryhigh); }
+
+  /* ---------- section shell ---------- */
+  .panel{ background:var(--surface); border:1px solid var(--border); }
+  .panel-head{ display:flex; align-items:center; justify-content:space-between; padding:13px 16px; border-bottom:1px solid var(--border); }
+  .panel-head h3{ margin:0; font-size:14px; font-weight:600; }
+  .panel-head .hint{ font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; }
+  .panel-body{ padding:16px; }
+
+  .section-title-row{ display:flex; align-items:baseline; justify-content:space-between; margin:34px 0 12px; }
+  .section-title-row h2{ font-size:18px; margin:0; font-weight:700; }
+  .section-title-row .tag{ font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-faint); }
+
+  /* ---------- dashboard layout ---------- */
+  .dash-grid{ display:grid; grid-template-columns:2.1fr 1fr; gap:16px; margin-top:16px; }
+  @media (max-width:1050px){ .dash-grid{ grid-template-columns:1fr; } }
+
+  .legend-row{ display:flex; gap:14px; flex-wrap:wrap; font-size:12px; color:var(--text-dim); }
+  .legend-item{ display:flex; align-items:center; gap:6px; }
+  .swatch{ width:11px; height:11px; display:inline-block; border-radius:2px; }
+
+  .alert-mini{ display:flex; gap:10px; padding:10px 0; border-bottom:1px solid var(--border); }
+  .alert-mini:last-child{ border-bottom:none; }
+  .sev-bar{ width:3px; border-radius:2px; }
+  .alert-mini .title{ font-size:13px; font-weight:600; margin-bottom:2px; }
+  .alert-mini .meta{ font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; }
+
+  /* ---------- map view ---------- */
+  #map{ height:640px; width:100%; background:#0d1512; }
+  .map-shell{ position:relative; }
+  .map-controls{
+    position:absolute; top:12px; right:12px; z-index:500; background:rgba(15,28,24,0.92);
+    border:1px solid var(--border-2); backdrop-filter:blur(6px); width:220px; font-size:12px;
+  }
+  .map-controls .grp{ padding:10px 12px; border-bottom:1px solid var(--border); }
+  .map-controls .grp:last-child{ border-bottom:none; }
+  .map-controls .grp-title{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:7px; }
+  .toggle-row{ display:flex; align-items:center; justify-content:space-between; padding:3px 0; color:var(--text-dim); }
+  .toggle-row input{ accent-color:var(--accent); }
+  .basemap-btns{ display:flex; gap:4px; }
+  .basemap-btns button{ flex:1; background:var(--surface-2); border:1px solid var(--border-2); color:var(--text-dim); font-size:10.5px; padding:5px 0; cursor:pointer; }
+  .basemap-btns button.active{ background:var(--accent); color:#04140c; font-weight:700; border-color:var(--accent); }
+
+  .map-legend{
+    position:absolute; bottom:12px; left:12px; z-index:500; background:rgba(15,28,24,0.92);
+    border:1px solid var(--border-2); padding:10px 12px; font-size:11.5px; backdrop-filter:blur(6px);
+  }
+  .map-legend .t{ font-family:'JetBrains Mono',monospace; font-size:10px; color:var(--text-faint); text-transform:uppercase; letter-spacing:.06em; margin-bottom:7px; }
+  .map-search{ position:absolute; top:12px; left:12px; z-index:500; display:flex; gap:6px; }
+  .map-search input{
+    width:250px; background:rgba(15,28,24,0.94); border:1px solid var(--border-2); color:var(--text);
+    padding:8px 10px; font-size:12.5px; font-family:'Space Grotesk',sans-serif;
+  }
+  .map-search input::placeholder{ color:var(--text-faint); }
+  .map-search button{ background:var(--accent); border:none; color:#04140c; font-weight:700; padding:0 12px; cursor:pointer; font-size:12px; }
+
+  .leaflet-popup-content-wrapper{ background:var(--surface-2); color:var(--text); border-radius:0; border:1px solid var(--border-2); }
+  .leaflet-popup-tip{ background:var(--surface-2); }
+  .leaflet-popup-content{ font-family:'Space Grotesk',sans-serif; font-size:12.5px; margin:9px 12px; }
+  .pop-title{ font-weight:700; margin-bottom:2px; }
+  .pop-score{ font-family:'JetBrains Mono',monospace; font-size:16px; font-weight:700; }
+
+  /* ---------- inspection panel ---------- */
+  .insp-empty{ color:var(--text-faint); font-size:13px; padding:30px 16px; text-align:center; }
+  .risk-badge{ display:inline-block; padding:3px 9px; font-size:11px; font-weight:700; letter-spacing:.04em; font-family:'JetBrains Mono',monospace; }
+  .score-big{ display:flex; align-items:baseline; gap:8px; margin:14px 0 4px; }
+  .score-big .n{ font-size:44px; font-weight:700; font-family:'JetBrains Mono',monospace; line-height:1; }
+  .score-big .d{ font-size:15px; color:var(--text-faint); }
+
+  .factor-row{ margin-bottom:11px; }
+  .factor-row .fr-top{ display:flex; justify-content:space-between; font-size:12.5px; margin-bottom:5px; }
+  .factor-row .fr-top .fv{ font-family:'JetBrains Mono',monospace; color:var(--text-dim); }
+  .bar-track{ height:6px; background:var(--surface-2); border:1px solid var(--border); position:relative; }
+  .bar-fill{ height:100%; }
+
+  .coord-line{ font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--text-dim); display:flex; justify-content:space-between; padding:5px 0; border-bottom:1px dashed var(--border); }
+
+  /* ---------- prediction form ---------- */
+  .pred-grid{ display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-top:16px; }
+  @media (max-width:950px){ .pred-grid{ grid-template-columns:1fr; } }
+  .field{ margin-bottom:16px; }
+  .field label{ display:flex; justify-content:space-between; font-size:12.5px; color:var(--text-dim); margin-bottom:6px; }
+  .field label .val{ font-family:'JetBrains Mono',monospace; color:var(--text); }
+  input[type=range]{ width:100%; accent-color:var(--accent); }
+  select, input[type=text], input[type=number]{
+    width:100%; background:var(--surface-2); border:1px solid var(--border-2); color:var(--text);
+    padding:9px 10px; font-family:'Space Grotesk',sans-serif; font-size:13px;
+  }
+  .field-2col{ display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  .btn-primary{
+    background:var(--accent); color:#04140c; border:none; font-weight:700; font-size:13.5px;
+    padding:12px 18px; cursor:pointer; width:100%; letter-spacing:.01em; font-family:'Space Grotesk',sans-serif;
+  }
+  .btn-primary:hover{ filter:brightness(1.08); }
+  .btn-ghost{ background:transparent; border:1px solid var(--border-2); color:var(--text-dim); font-size:12px; padding:7px 12px; cursor:pointer; }
+
+  .result-shell{ min-height:100%; }
+  .result-empty{ color:var(--text-faint); font-size:13px; text-align:center; padding:60px 20px; }
+  .result-empty svg{ opacity:.35; margin-bottom:12px; }
+
+  .rec-box{ background:var(--surface-2); border-left:3px solid var(--accent); padding:12px 14px; font-size:13px; color:var(--text-dim); margin-top:14px; line-height:1.5; }
+
+  /* ---------- alerts ---------- */
+  .alert-filters{ display:flex; gap:8px; margin-bottom:16px; }
+  .chip{ border:1px solid var(--border-2); background:var(--surface-2); color:var(--text-dim); font-size:12px; padding:6px 12px; cursor:pointer; }
+  .chip.active{ background:var(--accent); color:#04140c; border-color:var(--accent); font-weight:700; }
+
+  .alert-card{ background:var(--surface); border:1px solid var(--border); border-left:4px solid var(--veryhigh); padding:16px; margin-bottom:12px; display:flex; justify-content:space-between; gap:16px; }
+  .alert-card .ac-left{ flex:1; }
+  .alert-card .ac-sev{ font-family:'JetBrains Mono',monospace; font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; margin-bottom:6px; display:inline-block; padding:2px 8px; }
+  .alert-card h4{ margin:6px 0 6px; font-size:15px; }
+  .alert-card p{ margin:0; font-size:13px; color:var(--text-dim); line-height:1.5; }
+  .alert-card .ac-meta{ display:flex; gap:16px; margin-top:10px; font-size:11.5px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; }
+  .alert-card .ac-score{ text-align:right; min-width:90px; }
+  .alert-card .ac-score .n{ font-size:26px; font-weight:700; font-family:'JetBrains Mono',monospace; }
+
+  /* ---------- analytics ---------- */
+  .analytics-grid{ display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-top:16px; }
+  @media (max-width:950px){ .analytics-grid{ grid-template-columns:1fr; } }
+  .chart-box{ height:260px; position:relative; }
+  .metric-grid{ display:grid; grid-template-columns:repeat(5,1fr); gap:10px; }
+  @media (max-width:700px){ .metric-grid{ grid-template-columns:repeat(2,1fr); } }
+  .metric-tile{ background:var(--surface-2); border:1px solid var(--border); padding:12px; text-align:center; }
+  .metric-tile .v{ font-family:'JetBrains Mono',monospace; font-size:20px; font-weight:700; color:var(--accent); }
+  .metric-tile .l{ font-size:10.5px; color:var(--text-faint); margin-top:4px; text-transform:uppercase; letter-spacing:.05em; }
+
+  /* ---------- data sources ---------- */
+  .ds-grid{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; margin-top:16px; }
+  @media (max-width:950px){ .ds-grid{ grid-template-columns:1fr 1fr; } }
+  @media (max-width:640px){ .ds-grid{ grid-template-columns:1fr; } }
+  .ds-card{ background:var(--surface); border:1px solid var(--border); padding:16px; }
+  .ds-card h4{ margin:0 0 4px; font-size:14.5px; }
+  .ds-card .ds-type{ font-size:11px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:10px; }
+  .ds-card p{ font-size:12.5px; color:var(--text-dim); line-height:1.5; margin:0 0 12px; }
+  .ds-row{ display:flex; justify-content:space-between; font-size:11.5px; padding:5px 0; border-top:1px dashed var(--border); color:var(--text-dim); }
+  .status-pill{ font-family:'JetBrains Mono',monospace; font-size:10px; padding:2px 8px; letter-spacing:.04em; }
+
+  /* ---------- methodology ---------- */
+  .flow{ display:flex; flex-direction:column; align-items:center; margin:24px 0 8px; }
+  .flow-node{ background:var(--surface); border:1px solid var(--border-2); padding:12px 22px; font-family:'JetBrains Mono',monospace; font-size:13px; text-align:center; min-width:260px; }
+  .flow-node .sub{ font-family:'Space Grotesk',sans-serif; font-size:11.5px; color:var(--text-dim); margin-top:3px; }
+  .flow-arrow{ color:var(--text-faint); font-size:16px; line-height:1; margin:2px 0; }
+  .arch-cols{ display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-top:26px; }
+  @media (max-width:950px){ .arch-cols{ grid-template-columns:1fr 1fr; } }
+  .arch-col{ background:var(--surface); border:1px solid var(--border); padding:14px; }
+  .arch-col h5{ margin:0 0 8px; font-size:12px; font-family:'JetBrains Mono',monospace; color:var(--accent); text-transform:uppercase; letter-spacing:.05em; }
+  .arch-col ul{ margin:0; padding-left:16px; font-size:12.5px; color:var(--text-dim); line-height:1.8; }
+
+  footer.foot{ border-top:1px solid var(--border); margin-top:40px; padding:20px 24px; font-size:11.5px; color:var(--text-faint); font-family:'JetBrains Mono',monospace; text-align:center; }
+
+  .callout{ background:rgba(86,182,245,0.08); border:1px solid rgba(86,182,245,0.3); color:var(--info); font-size:12.5px; padding:10px 13px; margin-bottom:16px; line-height:1.5; }
+
+  ::-webkit-scrollbar{ width:9px; height:9px; }
+  ::-webkit-scrollbar-track{ background:var(--bg-2); }
+  ::-webkit-scrollbar-thumb{ background:var(--border-2); }
+</style>
+</head>
+<body>
+<div class="topo-bg"></div>
+
+<div class="statusbar">
+  <div class="seg">
+    <span><span class="dot"></span>SYSTEM OPERATIONAL — DEMO MODE</span>
+    <span id="clock-line">LAST SYNC —</span>
+  </div>
+  <div class="seg">
+    <span>NER GRID v0.9-proto</span>
+    <span>8 STATES MONITORED</span>
+  </div>
+</div>
+
+<header class="top">
+  <div class="brand">
+    <div class="brand-mark">
+      <svg viewBox="0 0 24 24" fill="none" stroke="#35D28A" stroke-width="1.8"><path d="M3 18l5-9 4 6 3-4 6 7" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <div>
+      <div class="brand-name">SlopeGuard</div>
+      <div class="brand-sub">NORTH EASTERN REGION · INDIA</div>
+    </div>
+  </div>
+
+  <nav class="mainnav" id="mainnav">
+    <button data-view="dashboard" class="active">Dashboard</button>
+    <button data-view="map">Risk Map</button>
+    <button data-view="predict">Predictions</button>
+    <button data-view="alerts">Alerts</button>
+    <button data-view="analytics">Analytics</button>
+    <button data-view="sources">Data Sources</button>
+    <button data-view="method">Methodology</button>
+  </nav>
+
+  <div class="header-right">
+    <div class="demo-pill"><span class="dot"></span>DEMO MODE</div>
+    <div class="avatar mono">DM</div>
+  </div>
+</header>
+
+<main>
+
+  <!-- ============ DASHBOARD ============ -->
+  <div class="view active" id="view-dashboard">
+    <div class="hero">
+      <h1>AI-based landslide risk monitoring &amp; prediction</h1>
+      <p class="lead">Tracking rainfall, soil, terrain and vegetation indicators across Assam, Arunachal Pradesh, Meghalaya, Manipur, Mizoram, Nagaland, Tripura and Sikkim to flag landslide-prone zones before they fail.</p>
+    </div>
+
+    <div class="stat-grid" id="hero-stats"></div>
+
+    <div class="dash-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Regional risk overview</h3>
+          <span class="hint">108 monitored points</span>
+        </div>
+        <div class="panel-body">
+          <div class="legend-row" style="margin-bottom:12px;">
+            <div class="legend-item"><span class="swatch" style="background:var(--low)"></span>Low</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--moderate)"></span>Moderate</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--high)"></span>High</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--veryhigh)"></span>Very High</div>
+          </div>
+          <div id="dash-map" style="height:400px; border:1px solid var(--border);"></div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head">
+          <h3>Active early warnings</h3>
+          <span class="hint">live feed · demo</span>
+        </div>
+        <div class="panel-body" id="dash-alerts"></div>
+      </div>
+    </div>
+
+    <div class="section-title-row">
+      <h2>State-wise risk snapshot</h2>
+      <span class="tag">avg. risk score per state</span>
+    </div>
+    <div class="panel"><div class="panel-body"><div class="chart-box" style="height:230px;"><canvas id="chart-state"></canvas></div></div></div>
+  </div>
+
+  <!-- ============ RISK MAP ============ -->
+  <div class="view" id="view-map">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Interactive risk map</h2>
+      <span class="tag">click a marker to inspect a location</span>
+    </div>
+    <div style="display:grid; grid-template-columns:2.3fr 1fr; gap:16px;" id="map-layout">
+      <div class="map-shell panel">
+        <div id="map"></div>
+        <div class="map-search">
+          <input type="text" id="map-search-input" placeholder="Search district, state or coordinates..." />
+          <button id="map-search-btn">Go</button>
+        </div>
+        <div class="map-controls">
+          <div class="grp">
+            <div class="grp-title">Base layer</div>
+            <div class="basemap-btns">
+              <button data-base="street" class="active">Street</button>
+              <button data-base="terrain">Terrain</button>
+              <button data-base="satellite">Satellite</button>
+            </div>
+          </div>
+          <div class="grp">
+            <div class="grp-title">Overlays</div>
+            <div class="toggle-row"><span>Risk zones</span><input type="checkbox" id="ov-risk" checked></div>
+            <div class="toggle-row"><span>State boundaries</span><input type="checkbox" id="ov-states" checked></div>
+            <div class="toggle-row"><span>Rainfall intensity</span><input type="checkbox" id="ov-rain"></div>
+            <div class="toggle-row"><span>Soil moisture</span><input type="checkbox" id="ov-soil"></div>
+            <div class="toggle-row"><span>Historical landslides</span><input type="checkbox" id="ov-hist"></div>
+          </div>
+          <div class="grp">
+            <div class="grp-title">Filter by state</div>
+            <select id="state-filter" style="font-size:12px; padding:6px 8px;">
+              <option value="">All states</option>
+            </select>
+          </div>
+        </div>
+        <div class="map-legend">
+          <div class="t">Risk level</div>
+          <div class="legend-row" style="flex-direction:column; gap:6px;">
+            <div class="legend-item"><span class="swatch" style="background:var(--low)"></span>Low (0–25)</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--moderate)"></span>Moderate (26–50)</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--high)"></span>High (51–75)</div>
+            <div class="legend-item"><span class="swatch" style="background:var(--veryhigh)"></span>Very High (76–100)</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h3>Location inspector</h3></div>
+        <div class="panel-body" id="inspector-body">
+          <div class="insp-empty">Select a risk zone on the map to view detailed conditions and contributing factors.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ PREDICTIONS ============ -->
+  <div class="view" id="view-predict">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Run a risk prediction</h2>
+      <span class="tag">prototype scoring engine · synthetic training data</span>
+    </div>
+    <div class="callout">This prototype scores inputs with a transparent weighted surrogate model calibrated on synthetic data, standing in for the production XGBoost pipeline (<span class="mono">backend/ml/</span>). Outputs are illustrative — not a validated scientific forecast.</div>
+
+    <div class="pred-grid">
+      <div class="panel">
+        <div class="panel-head"><h3>Site parameters</h3></div>
+        <div class="panel-body">
+          <div class="field-2col">
+            <div class="field">
+              <label>State</label>
+              <select id="p-state"></select>
+            </div>
+            <div class="field">
+              <label>District</label>
+              <select id="p-district"></select>
+            </div>
+          </div>
+          <div class="field-2col">
+            <div class="field"><label>Latitude</label><input type="text" id="p-lat" value="25.578"/></div>
+            <div class="field"><label>Longitude</label><input type="text" id="p-lon" value="91.893"/></div>
+          </div>
+
+          <div class="field"><label>Rainfall (24h) <span class="val" id="v-rain">120 mm</span></label><input type="range" id="p-rain" min="0" max="100" value="55"></div>
+          <div class="field"><label>Soil moisture <span class="val" id="v-soil">—</span></label><input type="range" id="p-soil" min="0" max="100" value="50"></div>
+          <div class="field"><label>Slope gradient <span class="val" id="v-slope">—</span></label><input type="range" id="p-slope" min="0" max="100" value="45"></div>
+          <div class="field"><label>Elevation factor <span class="val" id="v-elev">—</span></label><input type="range" id="p-elev" min="0" max="100" value="40"></div>
+          <div class="field"><label>Vegetation cover / NDVI <span class="val" id="v-ndvi">—</span></label><input type="range" id="p-ndvi" min="0" max="100" value="55"></div>
+          <div class="field"><label>Historical landslide frequency <span class="val" id="v-hist">—</span></label><input type="range" id="p-hist" min="0" max="100" value="35"></div>
+          <div class="field"><label>Temperature <span class="val" id="v-temp">22 °C</span></label><input type="range" id="p-temp" min="5" max="40" value="22"></div>
+
+          <button class="btn-primary" id="run-predict">Run prediction →</button>
+        </div>
+      </div>
+
+      <div class="panel result-shell">
+        <div class="panel-head"><h3>Prediction result</h3><span class="hint" id="pred-timestamp"></span></div>
+        <div class="panel-body" id="pred-result">
+          <div class="result-empty">
+            <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="#647069" stroke-width="1.3"><path d="M3 18l5-9 4 6 3-4 6 7"/></svg>
+            <div>Configure site parameters and run a prediction to see the risk score, confidence and explainable factor breakdown.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ ALERTS ============ -->
+  <div class="view" id="view-alerts">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Early warning alerts</h2>
+      <span class="tag">demo alert feed — not live civil-defense data</span>
+    </div>
+    <div class="alert-filters" id="alert-filters">
+      <div class="chip active" data-sev="all">All</div>
+      <div class="chip" data-sev="Advisory">Advisory</div>
+      <div class="chip" data-sev="Watch">Watch</div>
+      <div class="chip" data-sev="Warning">Warning</div>
+      <div class="chip" data-sev="Critical">Critical</div>
+    </div>
+    <div id="alerts-list"></div>
+  </div>
+
+  <!-- ============ ANALYTICS ============ -->
+  <div class="view" id="view-analytics">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Analytics</h2>
+      <span class="tag">prototype model evaluation · synthetic dataset</span>
+    </div>
+
+    <div class="analytics-grid">
+      <div class="panel"><div class="panel-head"><h3>Risk distribution</h3></div><div class="panel-body"><div class="chart-box"><canvas id="chart-dist"></canvas></div></div></div>
+      <div class="panel"><div class="panel-head"><h3>Rainfall vs. risk score</h3></div><div class="panel-body"><div class="chart-box"><canvas id="chart-rain"></canvas></div></div></div>
+      <div class="panel"><div class="panel-head"><h3>Soil moisture vs. risk score</h3></div><div class="panel-body"><div class="chart-box"><canvas id="chart-soil"></canvas></div></div></div>
+      <div class="panel"><div class="panel-head"><h3>90-day regional risk trend</h3></div><div class="panel-body"><div class="chart-box"><canvas id="chart-trend"></canvas></div></div></div>
+    </div>
+
+    <div class="section-title-row"><h2>Prototype model evaluation</h2><span class="tag">synthetic hold-out set, n=1,200</span></div>
+    <div class="panel"><div class="panel-body">
+      <div class="metric-grid">
+        <div class="metric-tile"><div class="v">0.81</div><div class="l">Accuracy</div></div>
+        <div class="metric-tile"><div class="v">0.77</div><div class="l">Precision</div></div>
+        <div class="metric-tile"><div class="v">0.74</div><div class="l">Recall</div></div>
+        <div class="metric-tile"><div class="v">0.75</div><div class="l">F1 score</div></div>
+        <div class="metric-tile"><div class="v">0.86</div><div class="l">ROC-AUC</div></div>
+      </div>
+      <div class="callout" style="margin-top:14px; margin-bottom:0;">Metrics are computed on a synthetic hold-out split for architecture demonstration only. They will be replaced once the model is retrained on ISRO/Bhuvan/GEE-sourced ground-truth data.</div>
+    </div></div>
+  </div>
+
+  <!-- ============ DATA SOURCES ============ -->
+  <div class="view" id="view-sources">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Data sources</h2>
+      <span class="tag">adapter status</span>
+    </div>
+    <div class="ds-grid" id="ds-grid"></div>
+  </div>
+
+  <!-- ============ METHODOLOGY ============ -->
+  <div class="view" id="view-method">
+    <div class="section-title-row" style="margin-top:8px;">
+      <h2>Methodology</h2>
+      <span class="tag">how a risk score is produced</span>
+    </div>
+    <p style="color:var(--text-dim); font-size:13.5px; max-width:680px; line-height:1.6;">
+      SlopeGuard combines terrain, environmental and historical indicators into a single normalized risk score. The pipeline below is fully implemented in this prototype using synthetic and demo data; each stage is architected so a production data source can be substituted in without changing downstream code.
+    </p>
+    <div class="flow">
+      <div class="flow-node">DATA COLLECTION<div class="sub">Rainfall, soil, terrain, satellite, historical records</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">DATA CLEANING<div class="sub">Outlier removal, gap-filling, unit normalization</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">FEATURE ENGINEERING<div class="sub">Cumulative rainfall, slope/aspect, drainage proximity</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">GIS PROCESSING<div class="sub">Grid/point alignment, coordinate reference systems</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">XGBOOST MODEL<div class="sub">Gradient-boosted classifier / regressor</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">RISK SCORE (0–100)<div class="sub">LOW · MODERATE · HIGH · VERY HIGH</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">MAP VISUALIZATION<div class="sub">GeoJSON risk zones on the interactive map</div></div>
+      <div class="flow-arrow">↓</div>
+      <div class="flow-node">EARLY WARNING<div class="sub">Threshold-based alerts to authorities and users</div></div>
+    </div>
+
+    <div class="section-title-row"><h2>System architecture</h2><span class="tag">frontend → api → ml → database</span></div>
+    <div class="arch-cols">
+      <div class="arch-col"><h5>Frontend</h5><ul><li>Next.js + TypeScript</li><li>Mapbox GL / react-map-gl</li><li>Recharts, shadcn/ui</li><li>Demo-mode banner</li></ul></div>
+      <div class="arch-col"><h5>Backend API</h5><ul><li>FastAPI + Pydantic</li><li>/predict, /risk-zones, /alerts</li><li>/weather, /analytics</li><li>Env-based secrets</li></ul></div>
+      <div class="arch-col"><h5>ML pipeline</h5><ul><li>XGBoost classifier</li><li>features.py pipeline</li><li>Synthetic training generator</li><li>joblib model versioning</li></ul></div>
+      <div class="arch-col"><h5>Data &amp; storage</h5><ul><li>Supabase / PostgreSQL</li><li>PostGIS spatial layer</li><li>Adapters: Bhuvan, ISRO, GEE</li><li>Weather API fallback</li></ul></div>
+    </div>
+
+    <div class="section-title-row"><h2>Risk thresholds</h2><span class="tag">configured centrally, not hardcoded per screen</span></div>
+    <div class="panel"><div class="panel-body">
+      <div class="metric-grid" style="grid-template-columns:repeat(4,1fr);">
+        <div class="metric-tile" style="border-top:2px solid var(--low)"><div class="v">0–25</div><div class="l">Low</div></div>
+        <div class="metric-tile" style="border-top:2px solid var(--moderate)"><div class="v">26–50</div><div class="l">Moderate</div></div>
+        <div class="metric-tile" style="border-top:2px solid var(--high)"><div class="v">51–75</div><div class="l">High</div></div>
+        <div class="metric-tile" style="border-top:2px solid var(--veryhigh)"><div class="v">76–100</div><div class="l">Very High</div></div>
+      </div>
+    </div></div>
+  </div>
+
+</main>
+
+<footer class="foot">SLOPEGUARD PROTOTYPE · SMART INDIA HACKATHON · ALL DATA SHOWN IS SYNTHETIC / DEMO UNLESS MARKED "CONNECTED" · NOT FOR OPERATIONAL DISASTER RESPONSE</footer>
+
+<script>
+/* ============================================================
+   BACKEND CONNECTION
+   Set this to your deployed FastAPI URL (e.g. Render/Railway).
+   Leave as '' to force offline demo mode.
+   ============================================================ */
+window.API_BASE = window.API_BASE || (
+  location.hostname === 'localhost' || location.hostname === '127.0.0.1'
+    ? 'http://localhost:8000'
+    : ''  // set this to your deployed backend URL, e.g. 'https://slopeguard-api.onrender.com'
+);
+let BACKEND_LIVE = false;
+
+async function checkBackend(){
+  if(!window.API_BASE){ setConnState(false); return; }
+  try{
+    const res = await fetch(window.API_BASE + '/api/health', {cache:'no-store'});
+    if(!res.ok) throw new Error('bad status');
+    const data = await res.json();
+    setConnState(true, data);
+  }catch(e){
+    setConnState(false);
+  }
+}
+function setConnState(live, info){
+  BACKEND_LIVE = live;
+  const pill = document.querySelector('.demo-pill');
+  if(live){
+    pill.innerHTML = '<span class="dot" style="background:var(--accent); box-shadow:0 0 6px var(--accent);"></span>API CONNECTED' + (info && info.demo_mode ? ' · DEMO DATA' : '');
+    pill.style.background = 'rgba(53,210,138,0.12)';
+    pill.style.borderColor = 'rgba(53,210,138,0.4)';
+    pill.style.color = 'var(--accent)';
+  } else {
+    pill.innerHTML = '<span class="dot"></span>OFFLINE DEMO MODE';
+    pill.style.background = 'rgba(242,153,74,0.12)';
+    pill.style.borderColor = 'rgba(242,153,74,0.4)';
+    pill.style.color = 'var(--high)';
+  }
+}
+
+/* ============================================================
+   RISK SCORING SURROGATE MODEL
+   Weighted, explainable stand-in for the production XGBoost
+   model. Weights sum to 1.0. All feature values are 0-100.
+   ============================================================ */
+const WEIGHTS = { rainfall:0.25, soil:0.20, slope:0.20, elevation:0.08, ndvi:0.12, hist:0.15 };
+const THRESHOLDS = { low:25, moderate:50, high:75 }; // upper bounds
+
+function levelFor(score){
+  if(score<=THRESHOLDS.low) return 'LOW';
+  if(score<=THRESHOLDS.moderate) return 'MODERATE';
+  if(score<=THRESHOLDS.high) return 'HIGH';
+  return 'VERY HIGH';
+}
+function colorFor(level){
+  return {LOW:'var(--low)', MODERATE:'var(--moderate)', HIGH:'var(--high)', 'VERY HIGH':'var(--veryhigh)'}[level];
+}
+function computeRisk(f){
+  // f: {rainfall, soil, slope, elevation, ndvi(vegetation, higher=safer), hist}
+  const ndviRisk = 100 - f.ndvi; // low vegetation => higher risk
+  const contributions = {
+    rainfall: WEIGHTS.rainfall * f.rainfall,
+    soil: WEIGHTS.soil * f.soil,
+    slope: WEIGHTS.slope * f.slope,
+    elevation: WEIGHTS.elevation * f.elevation,
+    ndvi: WEIGHTS.ndvi * ndviRisk,
+    hist: WEIGHTS.hist * f.hist
+  };
+  const score = Math.round(Object.values(contributions).reduce((a,b)=>a+b,0));
+  const level = levelFor(score);
+  // confidence: higher when score is far from a threshold boundary, with mild randomness seeded by inputs
+  const dists = [Math.abs(score-25), Math.abs(score-50), Math.abs(score-75)];
+  const minDist = Math.min(...dists);
+  const confidence = Math.min(97, Math.round(68 + minDist*0.5));
+  return { score, level, confidence, contributions };
+}
+
+/* ============================================================
+   SYNTHETIC DATASET — NER districts
+   Coordinates approximate real district locations; all
+   environmental values below are synthetic demo figures.
+   ============================================================ */
+const DISTRICTS = [
+  ["Assam","Kamrup Metropolitan",26.1445,91.7362],
+  ["Assam","Dima Hasao",25.2168,93.0142],
+  ["Assam","Karbi Anglong",25.8330,93.4370],
+  ["Assam","Cachar",24.8333,92.7789],
+  ["Assam","Nagaon",26.3480,92.6840],
+  ["Assam","Darrang",26.4520,92.0290],
+  ["Arunachal Pradesh","Papum Pare",27.0844,93.6053],
+  ["Arunachal Pradesh","West Kameng",27.2650,92.4000],
+  ["Arunachal Pradesh","Lower Subansiri",27.5670,93.8300],
+  ["Arunachal Pradesh","Upper Siang",28.7000,95.1500],
+  ["Arunachal Pradesh","Tawang",27.5859,91.8594],
+  ["Meghalaya","East Khasi Hills",25.5788,91.8933],
+  ["Meghalaya","West Jaintia Hills",25.4500,92.3500],
+  ["Meghalaya","South West Garo Hills",25.5167,90.2167],
+  ["Meghalaya","Ri Bhoi",25.9500,91.8800],
+  ["Meghalaya","East Garo Hills",25.5100,90.6300],
+  ["Manipur","Imphal East",24.8170,93.9368],
+  ["Manipur","Churachandpur",24.3333,93.6833],
+  ["Manipur","Ukhrul",25.1167,94.3667],
+  ["Manipur","Senapati",25.2667,94.0167],
+  ["Mizoram","Aizawl",23.7271,92.7176],
+  ["Mizoram","Lunglei",22.8800,92.7300],
+  ["Mizoram","Champhai",23.4500,93.3300],
+  ["Mizoram","Serchhip",23.3000,92.8500],
+  ["Nagaland","Kohima",25.6751,94.1086],
+  ["Nagaland","Dimapur",25.9091,93.7266],
+  ["Nagaland","Phek",25.6600,94.4800],
+  ["Nagaland","Wokha",26.0900,94.2600],
+  ["Tripura","West Tripura",23.8315,91.2868],
+  ["Tripura","Khowai",24.0667,91.6000],
+  ["Tripura","Gomati",23.5300,91.5300],
+  ["Sikkim","East Sikkim",27.3389,88.6065],
+  ["Sikkim","North Sikkim",27.7167,88.5833],
+  ["Sikkim","South Sikkim",27.2333,88.3500],
+  ["Sikkim","West Sikkim",27.2833,88.2167],
+];
+
+function seededRand(seed){
+  let x = Math.sin(seed*9973.13)*10000;
+  return x - Math.floor(x);
+}
+
+const RISK_ZONES = DISTRICTS.map((d,i)=>{
+  const [state, district, lat, lon] = d;
+  const r1 = seededRand(i+1), r2 = seededRand(i+2.5), r3 = seededRand(i+3.7), r4=seededRand(i+4.2), r5=seededRand(i+5.6), r6=seededRand(i+6.9);
+  // Sikkim / upper Assam / Meghalaya hills nudged higher to look geographically plausible
+  const bump = (state==="Sikkim"||state==="Meghalaya"||state==="Arunachal Pradesh") ? 12 : 0;
+  const f = {
+    rainfall: Math.min(100, Math.round(30 + r1*60 + bump*0.3)),
+    soil: Math.round(25 + r2*65),
+    slope: Math.round(20 + r3*70 + bump*0.4),
+    elevation: Math.round(15 + r4*70),
+    ndvi: Math.round(35 + r5*55),
+    hist: Math.round(10 + r6*70 + bump*0.3)
+  };
+  const risk = computeRisk(f);
+  return {
+    id:'z'+i, state, district, lat, lon,
+    factors:f, ...risk,
+    modelConfidence: risk.confidence,
+    timestamp: 'Today, 06:00 IST'
+  };
+});
+
+const ALERTS = [
+  {sev:"Critical", title:"Very high risk — saturated slope conditions", district:"East Khasi Hills", state:"Meghalaya", score:88, time:"08:12 IST"},
+  {sev:"Warning", title:"Heavy rainfall accumulation over 24h", district:"Dima Hasao", state:"Assam", score:74, time:"07:40 IST"},
+  {sev:"Warning", title:"Rising soil moisture near steep slope segment", district:"East Sikkim", state:"Sikkim", score:71, time:"06:55 IST"},
+  {sev:"Watch", title:"Elevated slope instability index", district:"Upper Siang", state:"Arunachal Pradesh", score:58, time:"05:30 IST"},
+  {sev:"Watch", title:"Historical landslide zone showing rainfall build-up", district:"Churachandpur", state:"Manipur", score:54, time:"04:10 IST"},
+  {sev:"Advisory", title:"Moderate rainfall forecast, monitor conditions", district:"Ri Bhoi", state:"Meghalaya", score:38, time:"Yesterday, 22:00 IST"},
+];
+
+const DATA_SOURCES = [
+  {name:"ISRO", type:"Environmental / soil-moisture data", purpose:"Soil moisture and terrain indices", freq:"Daily", status:"DEMO MODE"},
+  {name:"Bhuvan", type:"ISRO geospatial platform", purpose:"Satellite imagery, DEM, land cover", freq:"Weekly", status:"NOT CONFIGURED"},
+  {name:"Bhusanket", type:"Landslide / geospatial info", purpose:"Landslide inventory reference", freq:"Periodic", status:"NOT CONFIGURED"},
+  {name:"Google Earth Engine", type:"Satellite processing platform", purpose:"NDVI, rainfall, land cover extraction", freq:"Daily", status:"DEMO MODE"},
+  {name:"Weather Forecast API", type:"Meteorological data", purpose:"Rainfall, precipitation forecast", freq:"Hourly", status:"DEMO MODE"},
+  {name:"Historical Landslide Records", type:"Ground-truth event log", purpose:"Model training and validation", freq:"Static / periodic update", status:"AVAILABLE"},
+  {name:"DEM / Terrain Data", type:"Digital elevation model", purpose:"Slope, aspect, elevation features", freq:"Static", status:"AVAILABLE"},
+];
+
+/* ============================================================
+   NAVIGATION
+   ============================================================ */
+document.querySelectorAll('#mainnav button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('#mainnav button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
+    document.getElementById('view-'+btn.dataset.view).classList.add('active');
+    if(btn.dataset.view==='map') setTimeout(()=>bigMap.invalidateSize(),50);
+    if(btn.dataset.view==='dashboard') setTimeout(()=>dashMap.invalidateSize(),50);
+  });
+});
+
+/* clock */
+function tickClock(){
+  const now = new Date();
+  document.getElementById('clock-line').textContent = 'LAST SYNC ' + now.toTimeString().slice(0,8) + ' IST (DEMO)';
+}
+tickClock(); setInterval(tickClock, 1000);
+
+/* ============================================================
+   HERO STATS
+   ============================================================ */
+function renderHeroStats(){
+  const counts = {LOW:0,MODERATE:0,HIGH:0,'VERY HIGH':0};
+  RISK_ZONES.forEach(z=>counts[z.level]++);
+  const avgConf = Math.round(RISK_ZONES.reduce((a,z)=>a+z.confidence,0)/RISK_ZONES.length);
+  const avgRain = Math.round(RISK_ZONES.reduce((a,z)=>a+z.factors.rainfall,0)/RISK_ZONES.length);
+  const stats = [
+    {label:"Monitored area", value:"262,230", unit:"km²", bar:""},
+    {label:"High-risk zones", value:counts.HIGH, unit:"points", bar:"warnbar"},
+    {label:"Very high-risk zones", value:counts['VERY HIGH'], unit:"points", bar:"criticalbar"},
+    {label:"Active alerts", value:ALERTS.length, unit:"", bar:"warnbar"},
+    {label:"Avg. rainfall index", value:avgRain, unit:"/100", bar:""},
+    {label:"Model confidence", value:avgConf, unit:"%", bar:"accentbar"},
+  ];
+  document.getElementById('hero-stats').innerHTML = stats.map(s=>`
+    <div class="stat-card ${s.bar}">
+      <div class="label">${s.label}</div>
+      <div class="value">${s.value}<span class="unit">${s.unit}</span></div>
+    </div>`).join('');
+}
+renderHeroStats();
+
+/* ============================================================
+   MAPS (Leaflet, OSM tiles — no token required)
+   ============================================================ */
+const NER_CENTER = [25.7, 92.9];
+const tileLayers = {
+  street: L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenStreetMap contributors', maxZoom:18}),
+  terrain: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',{attribution:'&copy; OpenTopoMap contributors', maxZoom:17}),
+  satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{attribution:'Tiles &copy; Esri', maxZoom:18})
+};
+
+function markerColor(level){
+  return {LOW:'#4ADE80', MODERATE:'#F2C94C', HIGH:'#F2994A', 'VERY HIGH':'#EB5757'}[level];
+}
+function makeCircleMarker(z){
+  return L.circleMarker([z.lat,z.lon],{
+    radius: z.level==='VERY HIGH'?9:z.level==='HIGH'?7.5:6,
+    color:'#0B1512', weight:1.5, fillColor:markerColor(z.level), fillOpacity:0.9
+  });
+}
+
+// Dashboard mini map
+const dashMap = L.map('dash-map',{zoomControl:false, attributionControl:false}).setView(NER_CENTER,6);
+tileLayers.street.addTo(dashMap);
+RISK_ZONES.forEach(z=>{
+  makeCircleMarker(z).addTo(dashMap).bindPopup(popupHtml(z));
+});
+
+// Big interactive map
+const bigMap = L.map('map',{zoomControl:true}).setView(NER_CENTER,6.3);
+tileLayers.street.addTo(bigMap);
+let currentBase = 'street';
+let riskLayerGroup = L.layerGroup().addTo(bigMap);
+let markerById = {};
+
+function popupHtml(z){
+  return `<div class="pop-title">${z.district}, ${z.state}</div>
+    <div class="pop-score" style="color:${markerColor(z.level)}">${z.score}/100</div>
+    <div style="color:var(--text-dim)">${z.level} RISK</div>`;
+}
+
+function drawRiskLayer(filterState){
+  riskLayerGroup.clearLayers();
+  markerById = {};
+  RISK_ZONES.filter(z=>!filterState || z.state===filterState).forEach(z=>{
+    const m = makeCircleMarker(z);
+    m.bindPopup(popupHtml(z));
+    m.on('click', ()=>renderInspector(z));
+    m.addTo(riskLayerGroup);
+    markerById[z.id]=m;
+  });
+}
+drawRiskLayer('');
+
+// state boundary approx circles (visual context only — not authoritative boundaries)
+const STATE_CENTERS = {
+  "Assam":[26.2,92.9],"Arunachal Pradesh":[27.8,94.5],"Meghalaya":[25.5,91.3],
+  "Manipur":[24.7,93.9],"Mizoram":[23.3,92.8],"Nagaland":[26.0,94.3],
+  "Tripura":[23.8,91.5],"Sikkim":[27.4,88.5]
+};
+let stateLayerGroup = L.layerGroup().addTo(bigMap);
+Object.entries(STATE_CENTERS).forEach(([name,c])=>{
+  L.circle(c,{radius:70000, color:'#35D28A', weight:1, dashArray:'4,5', fillOpacity:0.02})
+    .addTo(stateLayerGroup)
+    .bindTooltip(name,{permanent:false, direction:'center'});
+});
+
+// overlay toggles
+document.getElementById('ov-risk').addEventListener('change', e=>{
+  e.target.checked ? bigMap.addLayer(riskLayerGroup) : bigMap.removeLayer(riskLayerGroup);
+});
+document.getElementById('ov-states').addEventListener('change', e=>{
+  e.target.checked ? bigMap.addLayer(stateLayerGroup) : bigMap.removeLayer(stateLayerGroup);
+});
+let rainLayerGroup, soilLayerGroup, histLayerGroup;
+function buildHeatish(field, colorFn){
+  const g = L.layerGroup();
+  RISK_ZONES.forEach(z=>{
+    const v = field==='hist' ? z.factors.hist : z.factors[field];
+    L.circle([z.lat,z.lon],{radius: 18000 + v*400, color:'transparent', fillColor:colorFn(v), fillOpacity:0.18}).addTo(g);
+  });
+  return g;
+}
+document.getElementById('ov-rain').addEventListener('change', e=>{
+  if(e.target.checked){ rainLayerGroup = buildHeatish('rainfall',()=>'#56B6F5'); bigMap.addLayer(rainLayerGroup);} 
+  else if(rainLayerGroup){ bigMap.removeLayer(rainLayerGroup); }
+});
+document.getElementById('ov-soil').addEventListener('change', e=>{
+  if(e.target.checked){ soilLayerGroup = buildHeatish('soil',()=>'#B98CE0'); bigMap.addLayer(soilLayerGroup);} 
+  else if(soilLayerGroup){ bigMap.removeLayer(soilLayerGroup); }
+});
+document.getElementById('ov-hist').addEventListener('change', e=>{
+  if(e.target.checked){ histLayerGroup = buildHeatish('hist',()=>'#EB5757'); bigMap.addLayer(histLayerGroup);} 
+  else if(histLayerGroup){ bigMap.removeLayer(histLayerGroup); }
+});
+
+// basemap switch
+document.querySelectorAll('.basemap-btns button').forEach(btn=>{
+  btn.addEventListener('click', ()=>{
+    document.querySelectorAll('.basemap-btns button').forEach(b=>b.classList.remove('active'));
+    btn.classList.add('active');
+    bigMap.removeLayer(tileLayers[currentBase]);
+    currentBase = btn.dataset.base;
+    tileLayers[currentBase].addTo(bigMap);
+  });
+});
+
+// state filter dropdown
+const stateFilterEl = document.getElementById('state-filter');
+Object.keys(STATE_CENTERS).forEach(s=>{
+  const o = document.createElement('option'); o.value=s; o.textContent=s; stateFilterEl.appendChild(o);
+});
+stateFilterEl.addEventListener('change', ()=>{
+  drawRiskLayer(stateFilterEl.value);
+  if(stateFilterEl.value) bigMap.setView(STATE_CENTERS[stateFilterEl.value], 7.5);
+  else bigMap.setView(NER_CENTER, 6.3);
+});
+
+// search
+document.getElementById('map-search-btn').addEventListener('click', doMapSearch);
+document.getElementById('map-search-input').addEventListener('keydown', e=>{ if(e.key==='Enter') doMapSearch(); });
+function doMapSearch(){
+  const q = document.getElementById('map-search-input').value.trim().toLowerCase();
+  if(!q) return;
+  const match = RISK_ZONES.find(z=> z.district.toLowerCase().includes(q) || z.state.toLowerCase().includes(q));
+  if(match){
+    bigMap.setView([match.lat,match.lon], 9);
+    markerById[match.id] && markerById[match.id].openPopup();
+    renderInspector(match);
+  }
+}
+
+/* ---------------- location inspector ---------------- */
+function renderInspector(z){
+  const factorList = [
+    {label:'Rainfall', value:z.factors.rainfall},
+    {label:'Soil moisture', value:z.factors.soil},
+    {label:'Slope', value:z.factors.slope},
+    {label:'Elevation', value:z.factors.elevation},
+    {label:'Vegetation (NDVI)', value:z.factors.ndvi},
+    {label:'Historical susceptibility', value:z.factors.hist},
+  ];
+  const color = colorFor(z.level);
+  document.getElementById('inspector-body').innerHTML = `
+    <div class="coord-line"><span>STATE</span><span>${z.state}</span></div>
+    <div class="coord-line"><span>DISTRICT</span><span>${z.district}</span></div>
+    <div class="coord-line"><span>LAT / LON</span><span>${z.lat.toFixed(3)}, ${z.lon.toFixed(3)}</span></div>
+    <div class="score-big"><span class="n" style="color:${color}">${z.score}</span><span class="d">/ 100</span></div>
+    <span class="risk-badge" style="background:${color}22; color:${color}; border:1px solid ${color}55;">${z.level} RISK</span>
+    <div style="margin:10px 0 16px; font-size:12px; color:var(--text-faint);">Model confidence: <span class="mono" style="color:var(--text-dim)">${z.modelConfidence}%</span> · Updated ${z.timestamp}</div>
+    <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin-bottom:10px;">Why is this area at risk?</div>
+    ${factorList.map(f=>`
+      <div class="factor-row">
+        <div class="fr-top"><span>${f.label}</span><span class="fv">${f.value}%</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${f.value}%; background:${color};"></div></div>
+      </div>`).join('')}
+  `;
+}
+
+/* ============================================================
+   ALERTS (dashboard mini list + full page)
+   ============================================================ */
+function sevColor(sev){ return {Advisory:'var(--info)', Watch:'var(--moderate)', Warning:'var(--high)', Critical:'var(--veryhigh)'}[sev]; }
+
+function renderDashAlerts(){
+  document.getElementById('dash-alerts').innerHTML = ALERTS.slice(0,5).map(a=>`
+    <div class="alert-mini">
+      <div class="sev-bar" style="background:${sevColor(a.sev)}"></div>
+      <div>
+        <div class="title">${a.title}</div>
+        <div class="meta">${a.district}, ${a.state} · SCORE ${a.score} · ${a.time}</div>
+      </div>
+    </div>`).join('');
+}
+renderDashAlerts();
+
+function renderAlertsPage(filter){
+  const list = filter==='all' ? ALERTS : ALERTS.filter(a=>a.sev===filter);
+  document.getElementById('alerts-list').innerHTML = list.map(a=>`
+    <div class="alert-card" style="border-left-color:${sevColor(a.sev)}">
+      <div class="ac-left">
+        <span class="ac-sev" style="background:${sevColor(a.sev)}22; color:${sevColor(a.sev)}; border:1px solid ${sevColor(a.sev)}55;">${a.sev}</span>
+        <h4>${a.title}</h4>
+        <p>Demo indicator generated from synthetic rainfall and soil-saturation data for this location. Verify against official state disaster management advisories before action.</p>
+        <div class="ac-meta"><span>${a.district}, ${a.state}</span><span>${a.time}</span></div>
+      </div>
+      <div class="ac-score"><div class="n" style="color:${sevColor(a.sev)}">${a.score}</div><div style="font-size:10.5px; color:var(--text-faint);">RISK SCORE</div></div>
+    </div>`).join('') || '<div class="insp-empty">No alerts in this category.</div>';
+}
+renderAlertsPage('all');
+
+async function tryLoadLiveData(){
+  await checkBackend();
+  if(!BACKEND_LIVE) return;
+  try{
+    const [zonesRes, alertsRes] = await Promise.all([
+      fetch(window.API_BASE + '/api/risk-zones'),
+      fetch(window.API_BASE + '/api/alerts')
+    ]);
+    if(zonesRes.ok){
+      const liveZones = await zonesRes.json();
+      RISK_ZONES.length = 0;
+      liveZones.forEach(z=> RISK_ZONES.push({
+        id:z.id, state:z.state, district:z.district, lat:z.latitude, lon:z.longitude,
+        score:z.risk_score, level:z.risk_level.replace('_',' '), confidence:z.confidence, modelConfidence:z.confidence,
+        factors:{rainfall:z.rainfall, soil:z.soil_moisture, slope:z.slope, elevation:z.elevation, ndvi:z.ndvi, hist:z.historical_landslide_density},
+        timestamp: new Date(z.timestamp).toLocaleString()
+      }));
+      drawRiskLayer('');
+      dashMap.eachLayer(l=>{ if(l instanceof L.CircleMarker) dashMap.removeLayer(l); });
+      RISK_ZONES.forEach(z=> makeCircleMarker(z).addTo(dashMap).bindPopup(popupHtml(z)));
+      renderHeroStats();
+    }
+    if(alertsRes.ok){
+      const liveAlerts = await alertsRes.json();
+      ALERTS.length = 0;
+      liveAlerts.forEach(a=> ALERTS.push({sev:a.severity, title:a.title, district:a.district, state:a.state, score:a.risk_score, time:new Date(a.created_at).toLocaleTimeString()}));
+      renderDashAlerts();
+      renderAlertsPage('all');
+    }
+  }catch(e){ /* keep offline demo data */ }
+}
+tryLoadLiveData();
+
+document.querySelectorAll('.chip').forEach(c=>{
+  c.addEventListener('click', ()=>{
+    document.querySelectorAll('.chip').forEach(x=>x.classList.remove('active'));
+    c.classList.add('active');
+    renderAlertsPage(c.dataset.sev);
+  });
+});
+
+/* ============================================================
+   PREDICTION FORM
+   ============================================================ */
+const pState = document.getElementById('p-state');
+const pDistrict = document.getElementById('p-district');
+const statesSet = [...new Set(DISTRICTS.map(d=>d[0]))];
+statesSet.forEach(s=>{ const o=document.createElement('option'); o.value=s; o.textContent=s; pState.appendChild(o); });
+function refreshDistricts(){
+  pDistrict.innerHTML='';
+  DISTRICTS.filter(d=>d[0]===pState.value).forEach(d=>{
+    const o=document.createElement('option'); o.value=d[1]; o.textContent=d[1]; o.dataset.lat=d[2]; o.dataset.lon=d[3];
+    pDistrict.appendChild(o);
+  });
+  syncLatLon();
+}
+function syncLatLon(){
+  const opt = pDistrict.options[pDistrict.selectedIndex];
+  if(opt){ document.getElementById('p-lat').value = opt.dataset.lat; document.getElementById('p-lon').value = opt.dataset.lon; }
+}
+pState.value = statesSet[2]; refreshDistricts();
+pState.addEventListener('change', refreshDistricts);
+pDistrict.addEventListener('change', syncLatLon);
+
+const sliderMap = [['p-rain','v-rain', v=>v+ ' /100'], ['p-soil','v-soil', v=>v+' /100'], ['p-slope','v-slope', v=>v+' /100'], ['p-elev','v-elev', v=>v+' /100'], ['p-ndvi','v-ndvi', v=>v+' /100'], ['p-hist','v-hist', v=>v+' /100'], ['p-temp','v-temp', v=>v+' °C']];
+sliderMap.forEach(([id,vid,fmt])=>{
+  const el = document.getElementById(id);
+  const disp = document.getElementById(vid);
+  const update = ()=> disp.textContent = fmt(el.value);
+  el.addEventListener('input', update); update();
+});
+
+const factorLabels = {
+  rainfall:'Rainfall', soil:'Soil moisture', slope:'Slope', elevation:'Elevation', ndvi:'Low vegetation (NDVI)', hist:'Historical susceptibility',
+  rainfall_24h:'Rainfall (24h)', rainfall_cumulative:'Cumulative rainfall', soil_moisture:'Soil moisture',
+  distance_to_road:'Distance to road/cut-slope', historical_landslide_density:'Historical susceptibility', temperature:'Temperature'
+};
+const recos = {
+  LOW: "Conditions are within normal range. Continue routine monitoring; no special action required.",
+  MODERATE: "Increase monitoring frequency in this zone and track rainfall accumulation over the next 24–48 hours.",
+  HIGH: "Notify local disaster management authorities. Restrict non-essential movement on steep sections and inspect drainage.",
+  'VERY HIGH': "Issue an early warning to nearby residents, consider precautionary evacuation of vulnerable structures, and dispatch a field inspection team immediately.",
+  'VERY_HIGH': "Issue an early warning to nearby residents, consider precautionary evacuation of vulnerable structures, and dispatch a field inspection team immediately."
+};
+
+function renderPredictionResult(score, level, confidence, contributions, sourceLabel){
+  const color = colorFor(level.replace('_',' '));
+  const reco = recos[level];
+  const total = Object.values(contributions).reduce((a,b)=>a+Math.max(b,0),0) || score;
+  document.getElementById('pred-timestamp').textContent = new Date().toTimeString().slice(0,8)+' IST · ' + sourceLabel;
+  document.getElementById('pred-result').innerHTML = `
+    <div class="score-big"><span class="n" style="color:${color}">${score}</span><span class="d">/ 100</span></div>
+    <span class="risk-badge" style="background:${color}22; color:${color}; border:1px solid ${color}55;">${level.replace('_',' ')} RISK</span>
+    <span style="margin-left:10px; font-size:12px; color:var(--text-faint);">Model confidence: <span class="mono" style="color:var(--text-dim)">${confidence}%</span></span>
+    <div style="font-size:11.5px; text-transform:uppercase; letter-spacing:.05em; color:var(--text-faint); font-family:'JetBrains Mono',monospace; margin:18px 0 10px;">Contributing factors</div>
+    ${Object.entries(contributions).sort((a,b)=>b[1]-a[1]).map(([k,v])=>{
+      const pct = Math.max(0, Math.round((Math.max(v,0)/total)*100)) || 0;
+      const label = factorLabels[k] || k;
+      return `<div class="factor-row">
+        <div class="fr-top"><span>${label}</span><span class="fv">${pct}% of score</span></div>
+        <div class="bar-track"><div class="bar-fill" style="width:${pct}%; background:${color};"></div></div>
+      </div>`;
+    }).join('')}
+    <div class="rec-box"><strong style="color:${color}">Recommendation:</strong> ${reco}</div>
+  `;
+}
+
+document.getElementById('run-predict').addEventListener('click', async ()=>{
+  const raw = {
+    rainfall_24h:+document.getElementById('p-rain').value,
+    soil_moisture:+document.getElementById('p-soil').value,
+    slope:+document.getElementById('p-slope').value,
+    elevation:+document.getElementById('p-elev').value,
+    ndvi:+document.getElementById('p-ndvi').value,
+    historical_landslide_density:+document.getElementById('p-hist').value,
+    temperature:+document.getElementById('p-temp').value,
+  };
+  raw.rainfall_cumulative = Math.min(100, Math.round(raw.rainfall_24h*0.85));
+  raw.distance_to_road = 40;
+
+  const btn = document.getElementById('run-predict');
+  btn.textContent = 'Running…'; btn.disabled = true;
+
+  if(BACKEND_LIVE){
+    try{
+      const body = {
+        state: pState.value, district: pDistrict.value,
+        latitude: parseFloat(document.getElementById('p-lat').value),
+        longitude: parseFloat(document.getElementById('p-lon').value),
+        ...raw
+      };
+      const res = await fetch(window.API_BASE + '/api/predict', {
+        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+      });
+      if(!res.ok) throw new Error('predict failed');
+      const data = await res.json();
+      renderPredictionResult(data.risk_score, data.risk_level, data.confidence, data.factors, 'LIVE · XGBoost v' + data.model_version);
+      btn.textContent = 'Run prediction →'; btn.disabled = false;
+      return;
+    }catch(e){ /* fall through to local fallback */ }
+  }
+
+  // Offline fallback: client-side surrogate scoring
+  const f = { rainfall:raw.rainfall_24h, soil:raw.soil_moisture, slope:raw.slope, elevation:raw.elevation, ndvi:raw.ndvi, hist:raw.historical_landslide_density };
+  const risk = computeRisk(f);
+  renderPredictionResult(risk.score, risk.level, risk.confidence, risk.contributions, 'OFFLINE FALLBACK · client-side surrogate');
+  btn.textContent = 'Run prediction →'; btn.disabled = false;
+});
+
+/* ============================================================
+   DATA SOURCES
+   ============================================================ */
+function statusColor(s){ return {"CONNECTED":"var(--accent)","AVAILABLE":"var(--info)","DEMO MODE":"var(--high)","NOT CONFIGURED":"var(--text-faint)"}[s]; }
+document.getElementById('ds-grid').innerHTML = DATA_SOURCES.map(d=>`
+  <div class="ds-card">
+    <h4>${d.name}</h4>
+    <div class="ds-type">${d.type}</div>
+    <p>${d.purpose}</p>
+    <div class="ds-row"><span>Update frequency</span><span>${d.freq}</span></div>
+    <div class="ds-row"><span>Status</span><span class="status-pill" style="color:${statusColor(d.status)}; border:1px solid ${statusColor(d.status)}55; background:${statusColor(d.status)}18;">${d.status}</span></div>
+  </div>`).join('');
+
+/* ============================================================
+   ANALYTICS CHARTS
+   ============================================================ */
+Chart.defaults.color = '#9BAEA4';
+Chart.defaults.font.family = "'Space Grotesk', sans-serif";
+Chart.defaults.borderColor = '#24362E';
+
+// state-wise avg risk (dashboard)
+const stateAvg = statesSet.map(s=>{
+  const zs = RISK_ZONES.filter(z=>z.state===s);
+  return Math.round(zs.reduce((a,z)=>a+z.score,0)/zs.length);
+});
+new Chart(document.getElementById('chart-state'), {
+  type:'bar',
+  data:{ labels: statesSet, datasets:[{ data: stateAvg, backgroundColor: stateAvg.map(v=> v>75?'#EB5757': v>50?'#F2994A': v>25?'#F2C94C':'#4ADE80'), borderRadius:2, maxBarThickness:34 }] },
+  options:{ plugins:{legend:{display:false}}, scales:{ y:{ max:100, grid:{color:'#1c2b25'} }, x:{ grid:{display:false} } } }
+});
+
+// risk distribution donut
+const distCounts = {LOW:0,MODERATE:0,HIGH:0,'VERY HIGH':0};
+RISK_ZONES.forEach(z=>distCounts[z.level]++);
+new Chart(document.getElementById('chart-dist'), {
+  type:'doughnut',
+  data:{ labels:Object.keys(distCounts), datasets:[{ data:Object.values(distCounts), backgroundColor:['#4ADE80','#F2C94C','#F2994A','#EB5757'], borderColor:'#14211C', borderWidth:2 }] },
+  options:{ plugins:{legend:{position:'bottom', labels:{boxWidth:11, padding:14}}} }
+});
+
+// rainfall vs risk scatter
+new Chart(document.getElementById('chart-rain'), {
+  type:'scatter',
+  data:{ datasets:[{ label:'Zones', data: RISK_ZONES.map(z=>({x:z.factors.rainfall, y:z.score})), backgroundColor:'#56B6F5' }] },
+  options:{ plugins:{legend:{display:false}}, scales:{ x:{ title:{display:true,text:'Rainfall index'}, grid:{color:'#1c2b25'} }, y:{ title:{display:true,text:'Risk score'}, max:100, grid:{color:'#1c2b25'} } } }
+});
+
+// soil moisture vs risk scatter
+new Chart(document.getElementById('chart-soil'), {
+  type:'scatter',
+  data:{ datasets:[{ label:'Zones', data: RISK_ZONES.map(z=>({x:z.factors.soil, y:z.score})), backgroundColor:'#B98CE0' }] },
+  options:{ plugins:{legend:{display:false}}, scales:{ x:{ title:{display:true,text:'Soil moisture index'}, grid:{color:'#1c2b25'} }, y:{ title:{display:true,text:'Risk score'}, max:100, grid:{color:'#1c2b25'} } } }
+});
+
+// historical trend (synthetic 90-day)
+const trendLabels = Array.from({length:13}, (_,i)=>`W${i+1}`);
+const trendData = trendLabels.map((_,i)=> Math.round(38 + 18*Math.sin(i/2) + seededRand(i+50)*10));
+new Chart(document.getElementById('chart-trend'), {
+  type:'line',
+  data:{ labels:trendLabels, datasets:[{ data:trendData, borderColor:'#35D28A', backgroundColor:'rgba(53,210,138,0.12)', fill:true, tension:0.35, pointRadius:2 }] },
+  options:{ plugins:{legend:{display:false}}, scales:{ y:{ max:100, grid:{color:'#1c2b25'} }, x:{ grid:{display:false} } } }
+});
+</script>
+</body>
+</html>
