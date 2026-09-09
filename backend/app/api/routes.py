@@ -30,6 +30,7 @@ def health():
         "status": "ok",
         "demo_mode": config.DEMO_MODE,
         "db_connected": db.is_connected(),
+        "db_error": db.connection_error(),
         "time": datetime.now(timezone.utc).isoformat(),
     }
 
