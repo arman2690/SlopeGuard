@@ -580,11 +580,8 @@
    Set this to your deployed FastAPI URL (e.g. Render/Railway).
    Leave as '' to force offline demo mode.
    ============================================================ */
-window.API_BASE = window.API_BASE || (
-  location.hostname === 'localhost' || location.hostname === '127.0.0.1'
-    ? 'http://localhost:8000'
-    : ''  // set this to your deployed backend URL, e.g. 'https://slopeguard-api.onrender.com'
-);
+window.API_BASE = 'https://slopeguard-36tz.onrender.com';
+
 let BACKEND_LIVE = false;
 
 async function checkBackend(){
