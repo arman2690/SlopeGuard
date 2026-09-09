@@ -577,34 +577,54 @@
 <script>
 /* ============================================================
    BACKEND CONNECTION
-   Set this to your deployed FastAPI URL (e.g. Render/Railway).
-   Leave as '' to force offline demo mode.
+   Set this to your deployed FastAPI URL.
    ============================================================ */
+
 window.API_BASE = 'https://slopeguard-36tz.onrender.com';
 
 let BACKEND_LIVE = false;
 
-async function checkBackend(){
-  if(!window.API_BASE){ setConnState(false); return; }
-  try{
-    const res = await fetch(window.API_BASE + '/api/health', {cache:'no-store'});
-    if(!res.ok) throw new Error('bad status');
+async function checkBackend() {
+  if (!window.API_BASE) {
+    setConnState(false);
+    return;
+  }
+
+  try {
+    const res = await fetch(
+      window.API_BASE + '/api/health',
+      { cache: 'no-store' }
+    );
+
+    if (!res.ok) throw new Error('bad status');
+
     const data = await res.json();
     setConnState(true, data);
-  }catch(e){
+
+  } catch (e) {
     setConnState(false);
   }
 }
-function setConnState(live, info){
+
+function setConnState(live, info) {
   BACKEND_LIVE = live;
+
   const pill = document.querySelector('.demo-pill');
-  if(live){
-    pill.innerHTML = '<span class="dot" style="background:var(--accent); box-shadow:0 0 6px var(--accent);"></span>API CONNECTED' + (info && info.demo_mode ? ' · DEMO DATA' : '');
+
+  if (live) {
+    pill.innerHTML =
+      '<span class="dot" style="background:var(--accent); box-shadow:0 0 6px var(--accent);"></span>' +
+      'API CONNECTED' +
+      (info && info.demo_mode ? ' · DEMO DATA' : '');
+
     pill.style.background = 'rgba(53,210,138,0.12)';
     pill.style.borderColor = 'rgba(53,210,138,0.4)';
     pill.style.color = 'var(--accent)';
+
   } else {
-    pill.innerHTML = '<span class="dot"></span>OFFLINE DEMO MODE';
+    pill.innerHTML =
+      '<span class="dot"></span>OFFLINE DEMO MODE';
+
     pill.style.background = 'rgba(242,153,74,0.12)';
     pill.style.borderColor = 'rgba(242,153,74,0.4)';
     pill.style.color = 'var(--high)';
