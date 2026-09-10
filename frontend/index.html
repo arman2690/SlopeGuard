@@ -606,7 +606,8 @@
       container: 'dash-map', 
       style: MAP_STYLE, 
       center: NER_CENTER, 
-      zoom: window.innerWidth < 768 ? 4.2 : 5.5, 
+      zoom: window.innerWidth < 768 ? 5.2 : 6, 
+      pitch: 60,
       interactive: false, 
       attributionControl: false,
       maxBounds: NE_BOUNDS 
@@ -625,25 +626,29 @@
 
     function setupMapLayers(map) {
       // 1. Satellite Source (Esri World Imagery)
-      map.addSource('satellite', {
-          type: 'raster',
-          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
-          tileSize: 256
-      });
-      map.addLayer({
-          id: 'satellite-layer',
-          type: 'raster',
-          source: 'satellite',
-          layout: { visibility: 'none' }
-      });
+      if (!map.getSource('satellite')) {
+        map.addSource('satellite', {
+            type: 'raster',
+            tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+            tileSize: 256
+        });
+        map.addLayer({
+            id: 'satellite-layer',
+            type: 'raster',
+            source: 'satellite',
+            layout: { visibility: 'none' }
+        });
+      }
 
       // 2. 3D Terrain Source (AWS Mapzen)
-      map.addSource('terrain', {
-          type: 'raster-dem',
-          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
-          encoding: 'terrarium',
-          tileSize: 256
-      });
+      if (!map.getSource('terrain')) {
+        map.addSource('terrain', {
+            type: 'raster-dem',
+            tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+            encoding: 'terrarium',
+            tileSize: 256
+        });
+      }
     }
 
     let bigMarkers = [];
@@ -670,16 +675,17 @@
       return container;
     }
 
-    function loadMarkers() {
-      // Dash map (static)
+    function loadDashMarkers() {
       RISK_ZONES.forEach(z => {
         const el = document.createElement('div');
         el.className = 'w-1.5 h-1.5 md:w-2 md:h-2 rounded-full';
         el.style.backgroundColor = z.color;
+        el.style.boxShadow = `0 0 8px ${z.color}`;
         new maplibregl.Marker({element: el}).setLngLat([z.lon, z.lat]).addTo(dashMap);
       });
+    }
 
-      // Big Map (interactive)
+    function loadBigMarkers() {
       RISK_ZONES.forEach(z => {
         const el = createMarkerElement(z);
         const marker = new maplibregl.Marker({element: el}).setLngLat([z.lon, z.lat]).addTo(bigMap);
@@ -694,10 +700,24 @@
       });
     }
 
-    dashMap.on('load', loadMarkers);
+    let isSpinning = true;
+    function rotateCamera(timestamp) {
+      if (isSpinning && !document.getElementById('view-dashboard').classList.contains('hidden')) {
+        dashMap.rotateTo((timestamp / 300) % 360, { duration: 0 });
+      }
+      requestAnimationFrame(rotateCamera);
+    }
+
+    dashMap.on('load', () => {
+      setupMapLayers(dashMap);
+      dashMap.setTerrain({ source: 'terrain', exaggeration: 1.5 });
+      loadDashMarkers();
+      rotateCamera(0);
+    });
+
     bigMap.on('load', () => {
       setupMapLayers(bigMap);
-      loadMarkers();
+      loadBigMarkers();
     });
     
     // Close inspector if clicking on empty map
