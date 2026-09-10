@@ -491,23 +491,32 @@
       lucide.createIcons();
       btn.disabled = true;
 
-      // Simulate network delay
-      setTimeout(() => {
-        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Alert Dispatched`;
+      try {
+        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-sms-blast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated."
+          })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          throw new Error(data.detail || 'Failed to dispatch alert blast.');
+        }
+
+        // Show push notification locally as well if enabled
+        if ("Notification" in window && Notification.permission === "granted") {
+          new Notification("EMERGENCY: SlopeGuard Alert", {
+            body: `Critical landslide risk detected in NE India. SMS blast dispatched to ${data.results?.length || 0} subscribers.`,
+            requireInteraction: true
+          });
+        }
+
+        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Blast Dispatched`;
         btn.classList.remove('bg-danger', 'hover:bg-red-600');
         btn.classList.add('bg-success', 'hover:bg-green-600');
         lucide.createIcons();
-        
-        // Trigger OS Push Notification if subscribed
-        if ("Notification" in window && Notification.permission === "granted") {
-          const contact = localStorage.getItem('slopeguard_contact') || 'Public';
-          new Notification("EMERGENCY: SlopeGuard Alert", {
-            body: `Critical landslide risk detected in NE India. Evacuation protocols initiated. (Sent to ${contact})`,
-            requireInteraction: true
-          });
-        } else if (localStorage.getItem('slopeguard_subscribed')) {
-          alert("EMERGENCY ALERT: Critical landslide risk detected! (Browser notifications blocked, showing popup instead)");
-        }
         
         setTimeout(() => {
           closeAlertModal();
@@ -519,46 +528,45 @@
             lucide.createIcons();
           }, 400);
         }, 1500);
-      }, 1200);
+
+      } catch (err) {
+        alert("Alert Dispatch Error: " + err.message);
+        btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Dispatch Alert`;
+        btn.disabled = false;
+        lucide.createIcons();
+      }
     }
 
-    function subscribeUser() {
+    async function subscribeUser() {
       const input = document.getElementById('sub-contact').value.trim();
-      if (!input) return alert("Please enter your contact details to subscribe.");
+      if (!input) return alert("Please enter your phone number to subscribe (e.g. +1234567890).");
       
       const btn = document.getElementById('btn-subscribe');
       btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i>`;
       lucide.createIcons();
+      btn.disabled = true;
 
-      if ("Notification" in window) {
-        Notification.requestPermission().then(permission => {
-          setTimeout(() => {
-            btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
-            btn.classList.replace('bg-info', 'bg-success');
-            btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
-            lucide.createIcons();
-            
-            localStorage.setItem('slopeguard_subscribed', 'true');
-            localStorage.setItem('slopeguard_contact', input);
-            
-            if (permission === "granted") {
-              new Notification("SlopeGuard Registry", {
-                body: `Successfully registered ${input} for landslide early warnings.`
-              });
-            } else {
-              alert(`Successfully registered ${input}. Please enable browser notifications to receive alerts.`);
-            }
-          }, 800);
+      try {
+        const res = await fetch('https://slopeguard-36tz.onrender.com/api/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ phone_number: input })
         });
-      } else {
-        setTimeout(() => {
-          btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
-          btn.classList.replace('bg-info', 'bg-success');
-          btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
-          lucide.createIcons();
-          localStorage.setItem('slopeguard_subscribed', 'true');
-          alert(`Successfully registered ${input}!`);
-        }, 800);
+        
+        if (!res.ok) throw new Error("Failed to subscribe");
+
+        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
+        btn.classList.replace('bg-info', 'bg-success');
+        btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
+        lucide.createIcons();
+        
+        if ("Notification" in window && Notification.permission !== "granted") {
+          Notification.requestPermission();
+        }
+      } catch (err) {
+        alert(err.message);
+        btn.innerHTML = `Subscribe`;
+        btn.disabled = false;
       }
     }
 

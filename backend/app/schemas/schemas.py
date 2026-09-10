@@ -93,3 +93,9 @@ class SmsAlertRequest(BaseModel):
     phone_number: str
     message: str
 
+
+class SubscribeRequest(BaseModel):
+    phone_number: str
+
+class BlastRequest(BaseModel):
+    message: str

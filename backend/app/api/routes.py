@@ -170,11 +170,20 @@ def data_sources():
 def model_info():
     return ml_predict.model_info()
 
-from ..schemas.schemas import SmsAlertRequest
+from ..schemas.schemas import SmsAlertRequest, SubscribeRequest, BlastRequest
 import os
 
-@router.post("/dispatch-sms")
-def dispatch_sms(body: SmsAlertRequest):
+_memory_subscribers = []
+
+@router.post("/subscribe")
+def subscribe(body: SubscribeRequest):
+    phone = body.phone_number.strip()
+    if phone not in _memory_subscribers:
+        _memory_subscribers.append(phone)
+    return {"status": "subscribed", "phone": phone}
+
+@router.post("/dispatch-sms-blast")
+def dispatch_sms_blast(body: BlastRequest):
     account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
     auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
     from_number = os.environ.get("TWILIO_FROM_NUMBER")
@@ -182,15 +191,26 @@ def dispatch_sms(body: SmsAlertRequest):
     if not all([account_sid, auth_token, from_number]):
         raise HTTPException(status_code=500, detail="Twilio credentials not configured on the server.")
 
+    if not _memory_subscribers:
+        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
+
     try:
         from twilio.rest import Client
         client = Client(account_sid, auth_token)
-        message = client.messages.create(
-            body=body.message,
-            from_=from_number,
-            to=body.phone_number
-        )
-        return {"status": "success", "message_sid": message.sid}
+        
+        results = []
+        for phone in _memory_subscribers:
+            try:
+                msg = client.messages.create(
+                    body=body.message,
+                    from_=from_number,
+                    to=phone
+                )
+                results.append({"phone": phone, "status": "sent", "sid": msg.sid})
+            except Exception as e:
+                results.append({"phone": phone, "status": "failed", "error": str(e)})
+        
+        return {"status": "completed", "results": results}
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
