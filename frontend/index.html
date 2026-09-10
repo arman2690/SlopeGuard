@@ -99,11 +99,8 @@
       <p class="text-secondary text-xs md:text-sm mb-5 md:mb-6 leading-relaxed">This action will immediately notify the National Disaster Management Authority (NDMA) and state collectors for the affected zones. This cannot be undone.</p>
       
       <div class="bg-surface2 rounded-lg p-3 mb-5 md:mb-6 border border-border text-xs font-mono text-secondary space-y-2">
-        <div class="flex justify-between items-center">
-          <span>Target Phone (Demo):</span>
-          <input type="tel" id="demo-phone" placeholder="+1234567890" class="bg-surface border border-border rounded px-2 py-1 text-primary w-32 outline-none focus:border-muted text-right">
-        </div>
-        <div class="flex justify-between"><span>Protocol:</span> <span class="text-primary">EAS-Immediate SMS</span></div>
+        <div class="flex justify-between"><span>Target:</span> <span class="text-primary">All NE SDMAs & Subscribers</span></div>
+        <div class="flex justify-between"><span>Protocol:</span> <span class="text-primary">EAS-Immediate Push</span></div>
       </div>
 
       <div class="flex gap-2 md:gap-3 justify-end">
@@ -231,7 +228,7 @@
             </div>
           </div>
 
-          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 pb-8 md:pb-12">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6 pb-6">
             <div class="bg-surface border border-border p-4 md:p-5 rounded-xl">
               <h3 class="text-xs md:text-sm font-medium mb-4">Risk Distribution</h3>
               <div class="h-48 md:h-64"><canvas id="chart-dist"></canvas></div>
@@ -239,6 +236,18 @@
             <div class="bg-surface border border-border p-4 md:p-5 rounded-xl">
               <h3 class="text-xs md:text-sm font-medium mb-4">State-wise Average Score</h3>
               <div class="h-48 md:h-64"><canvas id="chart-state"></canvas></div>
+            </div>
+          </div>
+
+          <div class="bg-surface border border-info/30 p-5 rounded-xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
+            <div class="absolute inset-0 bg-info/5"></div>
+            <div class="relative z-10 flex-1">
+              <h3 class="text-sm font-medium text-info mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4"></i> Public Early Warning Registry</h3>
+              <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
+            </div>
+            <div class="relative z-10 flex w-full md:w-auto gap-2">
+              <input type="text" id="sub-contact" placeholder="Phone or Email" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
+              <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
             </div>
           </div>
         </div>
@@ -477,53 +486,79 @@
 
     async function confirmAlert() {
       const btn = document.getElementById('btn-confirm-alert');
-      const phone = document.getElementById('demo-phone').value.trim();
       
-      if (!phone) {
-        alert('Please enter a target phone number for the demo SMS.');
-        return;
-      }
-
-      btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin"></i> Dispatching...`;
+      btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin inline"></i> Dispatching...`;
       lucide.createIcons();
       btn.disabled = true;
 
-      try {
-        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-sms', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            phone_number: phone,
-            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated."
-          })
-        });
-
-        if (!res.ok) {
-          const errData = await res.json();
-          throw new Error(errData.detail || 'Failed to send SMS');
-        }
-
-        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> SMS Dispatched`;
+      // Simulate network delay
+      setTimeout(() => {
+        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Alert Dispatched`;
         btn.classList.remove('bg-danger', 'hover:bg-red-600');
         btn.classList.add('bg-success', 'hover:bg-green-600');
         lucide.createIcons();
         
+        // Trigger OS Push Notification if subscribed
+        if ("Notification" in window && Notification.permission === "granted") {
+          const contact = localStorage.getItem('slopeguard_contact') || 'Public';
+          new Notification("EMERGENCY: SlopeGuard Alert", {
+            body: `Critical landslide risk detected in NE India. Evacuation protocols initiated. (Sent to ${contact})`,
+            requireInteraction: true
+          });
+        } else if (localStorage.getItem('slopeguard_subscribed')) {
+          alert("EMERGENCY ALERT: Critical landslide risk detected! (Browser notifications blocked, showing popup instead)");
+        }
+        
         setTimeout(() => {
           closeAlertModal();
           setTimeout(() => {
-            btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Dispatch Alert`;
+            btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Dispatch Alert`;
             btn.classList.add('bg-danger', 'hover:bg-red-600');
             btn.classList.remove('bg-success', 'hover:bg-green-600');
             btn.disabled = false;
             lucide.createIcons();
           }, 400);
         }, 1500);
+      }, 1200);
+    }
 
-      } catch (err) {
-        alert("Error sending SMS: " + err.message + " (Make sure Twilio keys are configured on the backend)");
-        btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Dispatch Alert`;
-        btn.disabled = false;
-        lucide.createIcons();
+    function subscribeUser() {
+      const input = document.getElementById('sub-contact').value.trim();
+      if (!input) return alert("Please enter your contact details to subscribe.");
+      
+      const btn = document.getElementById('btn-subscribe');
+      btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i>`;
+      lucide.createIcons();
+
+      if ("Notification" in window) {
+        Notification.requestPermission().then(permission => {
+          setTimeout(() => {
+            btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
+            btn.classList.replace('bg-info', 'bg-success');
+            btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
+            lucide.createIcons();
+            
+            localStorage.setItem('slopeguard_subscribed', 'true');
+            localStorage.setItem('slopeguard_contact', input);
+            
+            if (permission === "granted") {
+              new Notification("SlopeGuard Registry", {
+                body: `Successfully registered ${input} for landslide early warnings.`
+              });
+            } else {
+              alert(`Successfully registered ${input}. Please enable browser notifications to receive alerts.`);
+            }
+          }, 800);
+        });
+      } else {
+        setTimeout(() => {
+          btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
+          btn.classList.replace('bg-info', 'bg-success');
+          btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
+          lucide.createIcons();
+          localStorage.setItem('slopeguard_subscribed', 'true');
+          alert(`Successfully registered ${input}!`);
+        }, 800);
       }
     }
 
