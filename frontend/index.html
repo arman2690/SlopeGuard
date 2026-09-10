@@ -259,6 +259,16 @@
           </div>
         </div>
 
+        <!-- Floating UI Bottom Left (Map Controls) -->
+        <div class="absolute bottom-6 left-6 z-10 flex gap-2">
+          <button id="btn-satellite" class="bg-background/80 backdrop-blur-xl border border-border px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:text-primary transition-colors flex items-center gap-2 shadow-lg">
+            <i data-lucide="satellite" class="w-3.5 h-3.5"></i> Satellite
+          </button>
+          <button id="btn-3d" class="bg-background/80 backdrop-blur-xl border border-border px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:text-primary transition-colors flex items-center gap-2 shadow-lg">
+            <i data-lucide="mountain" class="w-3.5 h-3.5"></i> 3D Terrain
+          </button>
+        </div>
+
         <!-- Floating UI Right - Inspector -->
         <div id="map-inspector" class="absolute top-6 right-6 bottom-6 w-96 bg-background/90 backdrop-blur-xl border border-border rounded-xl shadow-2xl z-10 flex flex-col transform translate-x-[120%] transition-transform duration-500 ease-out">
           <div class="p-5 border-b border-border flex justify-between items-center bg-surface/50 rounded-t-xl">
@@ -548,14 +558,58 @@
     initDashboard();
 
     /* ============================================================
-       MAPLIBRE SETUP
+       MAPLIBRE SETUP (Northeast Bounds, Terrain, Satellite)
        ============================================================ */
     const NER_CENTER = [92.5, 25.5];
+    const NE_BOUNDS = [
+      [87.5, 21.5], // Southwest coordinates
+      [97.5, 29.5]  // Northeast coordinates
+    ];
     const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
 
-    const dashMap = new maplibregl.Map({ container: 'dash-map', style: MAP_STYLE, center: NER_CENTER, zoom: 4.8, interactive: false, attributionControl: false });
-    const bigMap = new maplibregl.Map({ container: 'big-map', style: MAP_STYLE, center: NER_CENTER, zoom: 6, attributionControl: false });
+    const dashMap = new maplibregl.Map({ 
+      container: 'dash-map', 
+      style: MAP_STYLE, 
+      center: NER_CENTER, 
+      zoom: 5.5, 
+      interactive: false, 
+      attributionControl: false,
+      maxBounds: NE_BOUNDS 
+    });
+
+    const bigMap = new maplibregl.Map({ 
+      container: 'big-map', 
+      style: MAP_STYLE, 
+      center: NER_CENTER, 
+      zoom: 6, 
+      maxPitch: 85,
+      attributionControl: false,
+      maxBounds: NE_BOUNDS
+    });
     bigMap.addControl(new maplibregl.NavigationControl({showCompass: false}), 'bottom-right');
+
+    function setupMapLayers(map) {
+      // 1. Satellite Source (Esri World Imagery)
+      map.addSource('satellite', {
+          type: 'raster',
+          tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+          tileSize: 256
+      });
+      map.addLayer({
+          id: 'satellite-layer',
+          type: 'raster',
+          source: 'satellite',
+          layout: { visibility: 'none' }
+      });
+
+      // 2. 3D Terrain Source (AWS Mapzen)
+      map.addSource('terrain', {
+          type: 'raster-dem',
+          tiles: ['https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png'],
+          encoding: 'terrarium',
+          tileSize: 256
+      });
+    }
 
     let bigMarkers = [];
 
@@ -606,9 +660,44 @@
     }
 
     dashMap.on('load', loadMarkers);
+    bigMap.on('load', () => {
+      setupMapLayers(bigMap);
+      loadMarkers();
+    });
     
     // Close inspector if clicking on empty map
     bigMap.on('click', () => closeInspector());
+
+    /* ============================================================
+       MAP CONTROLS (Satellite & 3D)
+       ============================================================ */
+    let isSatellite = false;
+    document.getElementById('btn-satellite').addEventListener('click', (e) => {
+      isSatellite = !isSatellite;
+      const btn = e.currentTarget;
+      btn.classList.toggle('text-primary', isSatellite);
+      btn.classList.toggle('text-secondary', !isSatellite);
+      btn.classList.toggle('bg-surface2', isSatellite);
+      
+      bigMap.setLayoutProperty('satellite-layer', 'visibility', isSatellite ? 'visible' : 'none');
+    });
+
+    let is3D = false;
+    document.getElementById('btn-3d').addEventListener('click', (e) => {
+      is3D = !is3D;
+      const btn = e.currentTarget;
+      btn.classList.toggle('text-primary', is3D);
+      btn.classList.toggle('text-secondary', !is3D);
+      btn.classList.toggle('bg-surface2', is3D);
+      
+      if (is3D) {
+        bigMap.setTerrain({ source: 'terrain', exaggeration: 1.5 });
+        bigMap.easeTo({ pitch: 65, bearing: 15, duration: 1000 });
+      } else {
+        bigMap.setTerrain(null);
+        bigMap.easeTo({ pitch: 0, bearing: 0, duration: 1000 });
+      }
+    });
 
     /* ============================================================
        INSPECTOR PANEL
