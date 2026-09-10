@@ -13,7 +13,9 @@ BHUVAN_API_KEY = os.getenv("BHUVAN_API_KEY", "")
 BHUSANKET_API_KEY = os.getenv("BHUSANKET_API_KEY", "")
 GEE_SERVICE_ACCOUNT_JSON = os.getenv("GEE_SERVICE_ACCOUNT_JSON", "")
 
-CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:5500,https://slope-guard-rust.vercel.app").split(",")
+CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:5500").split(",")
+if "https://slope-guard-rust.vercel.app" not in CORS_ORIGINS:
+    CORS_ORIGINS.append("https://slope-guard-rust.vercel.app")
 
 
 def data_mode() -> str:
