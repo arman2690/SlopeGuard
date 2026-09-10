@@ -177,40 +177,46 @@ _memory_subscribers = []
 
 @router.post("/subscribe")
 def subscribe(body: SubscribeRequest):
-    phone = body.phone_number.strip()
-    if phone not in _memory_subscribers:
-        _memory_subscribers.append(phone)
-    return {"status": "subscribed", "phone": phone}
+    contact = body.phone_number.strip()
+    if contact not in _memory_subscribers:
+        _memory_subscribers.append(contact)
+    return {"status": "subscribed", "contact": contact}
 
-@router.post("/dispatch-sms-blast")
-def dispatch_sms_blast(body: BlastRequest):
-    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
-    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
-    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+@router.post("/dispatch-email-blast")
+def dispatch_email_blast(body: BlastRequest):
+    gmail_user = os.environ.get("GMAIL_ADDRESS")
+    gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
 
-    if not all([account_sid, auth_token, from_number]):
-        raise HTTPException(status_code=500, detail="Twilio credentials not configured on the server.")
+    if not all([gmail_user, gmail_app_password]):
+        raise HTTPException(status_code=500, detail="Gmail credentials not configured on the server.")
 
     if not _memory_subscribers:
         raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
 
+    import smtplib
+    from email.message import EmailMessage
+
+    results = []
     try:
-        from twilio.rest import Client
-        client = Client(account_sid, auth_token)
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(gmail_user, gmail_app_password)
         
-        results = []
-        for phone in _memory_subscribers:
+        for email_addr in _memory_subscribers:
             try:
-                msg = client.messages.create(
-                    body=body.message,
-                    from_=from_number,
-                    to=phone
-                )
-                results.append({"phone": phone, "status": "sent", "sid": msg.sid})
+                msg = EmailMessage()
+                msg.set_content(body.message)
+                msg['Subject'] = 'EMERGENCY: SlopeGuard Landslide Alert'
+                msg['From'] = gmail_user
+                msg['To'] = email_addr
+                
+                server.send_message(msg)
+                results.append({"email": email_addr, "status": "sent"})
             except Exception as e:
-                results.append({"phone": phone, "status": "failed", "error": str(e)})
-        
+                results.append({"email": email_addr, "status": "failed", "error": str(e)})
+                
+        server.quit()
         return {"status": "completed", "results": results}
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"SMTP Connection Error: {str(e)}")
 

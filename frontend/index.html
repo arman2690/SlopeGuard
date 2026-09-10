@@ -246,7 +246,7 @@
               <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
             </div>
             <div class="relative z-10 flex w-full md:w-auto gap-2">
-              <input type="text" id="sub-contact" placeholder="Phone or Email" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
+              <input type="email" id="sub-contact" placeholder="Email Address" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
               <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
             </div>
           </div>
@@ -492,7 +492,7 @@
       btn.disabled = true;
 
       try {
-        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-sms-blast', {
+        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -502,13 +502,13 @@
 
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.detail || 'Failed to dispatch alert blast.');
+          throw new Error(data.detail || 'Failed to dispatch email blast.');
         }
 
         // Show push notification locally as well if enabled
         if ("Notification" in window && Notification.permission === "granted") {
           new Notification("EMERGENCY: SlopeGuard Alert", {
-            body: `Critical landslide risk detected in NE India. SMS blast dispatched to ${data.results?.length || 0} subscribers.`,
+            body: `Critical landslide risk detected in NE India. Email blast dispatched to ${data.results?.length || 0} subscribers.`,
             requireInteraction: true
           });
         }
@@ -539,7 +539,7 @@
 
     async function subscribeUser() {
       const input = document.getElementById('sub-contact').value.trim();
-      if (!input) return alert("Please enter your phone number to subscribe (e.g. +1234567890).");
+      if (!input || !input.includes('@')) return alert("Please enter a valid email address to subscribe.");
       
       const btn = document.getElementById('btn-subscribe');
       btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i>`;
@@ -550,7 +550,7 @@
         const res = await fetch('https://slopeguard-36tz.onrender.com/api/subscribe', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ phone_number: input })
+          body: JSON.stringify({ phone_number: input }) // Keeping schema same
         });
         
         if (!res.ok) throw new Error("Failed to subscribe");
