@@ -98,9 +98,12 @@
       <h2 class="text-base md:text-lg font-semibold text-primary mb-2">Issue Emergency Alert</h2>
       <p class="text-secondary text-xs md:text-sm mb-5 md:mb-6 leading-relaxed">This action will immediately notify the National Disaster Management Authority (NDMA) and state collectors for the affected zones. This cannot be undone.</p>
       
-      <div class="bg-surface2 rounded-lg p-3 mb-5 md:mb-6 border border-border text-xs font-mono text-secondary space-y-1">
-        <div class="flex justify-between"><span>Target:</span> <span class="text-primary">All NE SDMAs</span></div>
-        <div class="flex justify-between"><span>Protocol:</span> <span class="text-primary">EAS-Immediate</span></div>
+      <div class="bg-surface2 rounded-lg p-3 mb-5 md:mb-6 border border-border text-xs font-mono text-secondary space-y-2">
+        <div class="flex justify-between items-center">
+          <span>Target Phone (Demo):</span>
+          <input type="tel" id="demo-phone" placeholder="+1234567890" class="bg-surface border border-border rounded px-2 py-1 text-primary w-32 outline-none focus:border-muted text-right">
+        </div>
+        <div class="flex justify-between"><span>Protocol:</span> <span class="text-primary">EAS-Immediate SMS</span></div>
       </div>
 
       <div class="flex gap-2 md:gap-3 justify-end">
@@ -472,25 +475,56 @@
       alertModalContent.classList.add('scale-95');
     }
 
-    function confirmAlert() {
+    async function confirmAlert() {
       const btn = document.getElementById('btn-confirm-alert');
+      const phone = document.getElementById('demo-phone').value.trim();
+      
+      if (!phone) {
+        alert('Please enter a target phone number for the demo SMS.');
+        return;
+      }
+
       btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin"></i> Dispatching...`;
       lucide.createIcons();
-      setTimeout(() => {
-        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Dispatched`;
+      btn.disabled = true;
+
+      try {
+        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-sms', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            phone_number: phone,
+            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated."
+          })
+        });
+
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail || 'Failed to send SMS');
+        }
+
+        btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> SMS Dispatched`;
         btn.classList.remove('bg-danger', 'hover:bg-red-600');
         btn.classList.add('bg-success', 'hover:bg-green-600');
         lucide.createIcons();
+        
         setTimeout(() => {
           closeAlertModal();
           setTimeout(() => {
             btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Dispatch Alert`;
             btn.classList.add('bg-danger', 'hover:bg-red-600');
             btn.classList.remove('bg-success', 'hover:bg-green-600');
+            btn.disabled = false;
             lucide.createIcons();
           }, 400);
         }, 1500);
-      }, 1500);
+
+      } catch (err) {
+        alert("Error sending SMS: " + err.message + " (Make sure Twilio keys are configured on the backend)");
+        btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Dispatch Alert`;
+        btn.disabled = false;
+        lucide.createIcons();
+      }
     }
 
     /* ============================================================

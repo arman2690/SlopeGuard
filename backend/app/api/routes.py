@@ -169,3 +169,28 @@ def data_sources():
 @router.get("/model/info")
 def model_info():
     return ml_predict.model_info()
+
+from ..schemas.schemas import SmsAlertRequest
+import os
+
+@router.post("/dispatch-sms")
+def dispatch_sms(body: SmsAlertRequest):
+    account_sid = os.environ.get("TWILIO_ACCOUNT_SID")
+    auth_token = os.environ.get("TWILIO_AUTH_TOKEN")
+    from_number = os.environ.get("TWILIO_FROM_NUMBER")
+
+    if not all([account_sid, auth_token, from_number]):
+        raise HTTPException(status_code=500, detail="Twilio credentials not configured on the server.")
+
+    try:
+        from twilio.rest import Client
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            body=body.message,
+            from_=from_number,
+            to=body.phone_number
+        )
+        return {"status": "success", "message_sid": message.sid}
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
