@@ -210,6 +210,7 @@ def dispatch_email_blast(body: BlastRequest):
             }
             req = urllib.request.Request(url, method='POST')
             req.add_header('Content-Type', 'application/json')
+            req.add_header('User-Agent', 'Mozilla/5.0')
             data = json.dumps(payload).encode('utf-8')
             
             urllib.request.urlopen(req, data=data, timeout=5)
