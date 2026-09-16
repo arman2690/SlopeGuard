@@ -184,38 +184,38 @@ def subscribe(body: SubscribeRequest):
 
 @router.post("/dispatch-email-blast")
 def dispatch_email_blast(body: BlastRequest):
-    gmail_user = os.environ.get("GMAIL_ADDRESS")
-    gmail_app_password = os.environ.get("GMAIL_APP_PASSWORD")
-
-    if not all([gmail_user, gmail_app_password]):
-        raise HTTPException(status_code=500, detail="Gmail credentials not configured on the server.")
+    service_id = os.environ.get("EMAILJS_SERVICE_ID", "service_gw9dtvj")
+    template_id = os.environ.get("EMAILJS_TEMPLATE_ID", "template_mgrp4za")
+    public_key = os.environ.get("EMAILJS_PUBLIC_KEY", "mzMO2sJPbhu54CaIO")
 
     if not _memory_subscribers:
         raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
 
-    import smtplib
-    from email.message import EmailMessage
+    import urllib.request
+    import json
 
     results = []
-    try:
-        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
-        server.login(gmail_user, gmail_app_password)
-        
-        for email_addr in _memory_subscribers:
-            try:
-                msg = EmailMessage()
-                msg.set_content(body.message)
-                msg['Subject'] = 'EMERGENCY: SlopeGuard Landslide Alert'
-                msg['From'] = gmail_user
-                msg['To'] = email_addr
-                
-                server.send_message(msg)
-                results.append({"email": email_addr, "status": "sent"})
-            except Exception as e:
-                results.append({"email": email_addr, "status": "failed", "error": str(e)})
-                
-        server.quit()
-        return {"status": "completed", "results": results}
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"SMTP Connection Error: {str(e)}")
+    url = 'https://api.emailjs.com/api/v1.0/email/send'
+
+    for email_addr in _memory_subscribers:
+        try:
+            payload = {
+                "service_id": service_id,
+                "template_id": template_id,
+                "user_id": public_key,
+                "template_params": {
+                    "to_email": email_addr,
+                    "message": body.message
+                }
+            }
+            req = urllib.request.Request(url, method='POST')
+            req.add_header('Content-Type', 'application/json')
+            data = json.dumps(payload).encode('utf-8')
+            
+            urllib.request.urlopen(req, data=data, timeout=5)
+            results.append({"email": email_addr, "status": "sent"})
+        except Exception as e:
+            results.append({"email": email_addr, "status": "failed", "error": str(e)})
+
+    return {"status": "completed", "results": results}
 
