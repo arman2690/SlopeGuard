@@ -198,8 +198,7 @@ def dispatch_email_blast(body: BlastRequest):
 
     results = []
     try:
-        server = smtplib.SMTP('smtp.gmail.com', 587)
-        server.starttls()
+        server = smtplib.SMTP_SSL('smtp.gmail.com', 465, timeout=10)
         server.login(gmail_user, gmail_app_password)
         
         for email_addr in _memory_subscribers:
