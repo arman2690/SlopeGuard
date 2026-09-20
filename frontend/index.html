@@ -1001,6 +1001,19 @@
         const result = computeRisk(f);
         document.getElementById('pred-timestamp').textContent = new Date().toTimeString().slice(0,8) + ' IST';
         
+        // AUTOMATED EMAIL TRIGGER
+        if (result.label === 'HIGH' || result.label === 'CRITICAL' || result.label === 'VERY HIGH') {
+          fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk simulated by AI. Score: ${result.score}. Immediate evacuation protocols recommended.`
+            })
+          }).then(res => {
+            if(res.ok) alert("Automated Email Alert Dispatched Successfully!");
+          }).catch(e => console.error("Auto dispatch failed", e));
+        }
+
         const total = result.score;
         const barsHtml = Object.entries(result.contributions).sort((a,b)=>b[1]-a[1]).map(([key, val]) => {
           const pct = Math.max(0, Math.round((val/total)*100)) || 0;
