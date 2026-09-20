@@ -1009,9 +1009,14 @@
             body: JSON.stringify({
               message: `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk simulated by AI. Score: ${result.score}. Immediate evacuation protocols recommended.`
             })
-          }).then(res => {
-            if(res.ok) alert("Automated Email Alert Dispatched Successfully!");
-          }).catch(e => console.error("Auto dispatch failed", e));
+          }).then(async res => {
+            if(res.ok) {
+                alert("Automated Email Alert Dispatched Successfully!");
+            } else {
+                const data = await res.json();
+                alert("Auto-Dispatch Failed: " + (data.detail || "Unknown error. Did you forget to Subscribe first?"));
+            }
+          }).catch(e => alert("Auto dispatch network failed. Is the server awake?"));
         }
 
         const total = result.score;
