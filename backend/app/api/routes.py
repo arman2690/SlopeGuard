@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, BackgroundTasks
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from ml.prediction import predict as ml_predict  # noqa: E402
@@ -36,7 +36,7 @@ def health():
 
 
 @router.post("/predict", response_model=PredictResponse)
-def predict(body: PredictRequest):
+def predict(body: PredictRequest, background_tasks: BackgroundTasks):
     features = {k: getattr(body, k) for k in FEATURES}
     try:
         result = ml_predict.predict_risk(features)
@@ -56,6 +56,11 @@ def predict(body: PredictRequest):
         "model_version": result["model_version"],
     }
     db.insert_prediction(record)  # no-op if DB not connected
+
+    # AUTOMATED EMAIL TRIGGER
+    if result["risk_level"] in ["HIGH", "VERY_HIGH"] and _memory_subscribers:
+        auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district}, {body.state}. Immediate evacuation protocols recommended."
+        background_tasks.add_task(_send_emailjs_blast, auto_msg)
 
     return {**result, "data_mode": config.data_mode()}
 
@@ -182,14 +187,13 @@ def subscribe(body: SubscribeRequest):
         _memory_subscribers.append(contact)
     return {"status": "subscribed", "contact": contact}
 
-@router.post("/dispatch-email-blast")
-def dispatch_email_blast(body: BlastRequest):
+def _send_emailjs_blast(message: str):
     service_id = os.environ.get("EMAILJS_SERVICE_ID", "service_gw9dtvj")
     template_id = os.environ.get("EMAILJS_TEMPLATE_ID", "template_mgrp4za")
     public_key = os.environ.get("EMAILJS_PUBLIC_KEY", "mzMO2sJPbhu54CaIO")
 
     if not _memory_subscribers:
-        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
+        return []
 
     import urllib.request
     import json
@@ -205,7 +209,7 @@ def dispatch_email_blast(body: BlastRequest):
                 "user_id": public_key,
                 "template_params": {
                     "to_email": email_addr,
-                    "message": body.message
+                    "message": message
                 }
             }
             req = urllib.request.Request(url, method='POST')
@@ -218,5 +222,13 @@ def dispatch_email_blast(body: BlastRequest):
         except Exception as e:
             results.append({"email": email_addr, "status": "failed", "error": str(e)})
 
+    return results
+
+@router.post("/dispatch-email-blast")
+def dispatch_email_blast(body: BlastRequest):
+    if not _memory_subscribers:
+        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
+    
+    results = _send_emailjs_blast(body.message)
     return {"status": "completed", "results": results}
 
