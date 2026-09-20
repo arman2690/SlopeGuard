@@ -1002,7 +1002,8 @@
         document.getElementById('pred-timestamp').textContent = new Date().toTimeString().slice(0,8) + ' IST';
         
         // AUTOMATED EMAIL TRIGGER
-        if (result.label === 'HIGH' || result.label === 'CRITICAL' || result.label === 'VERY HIGH') {
+        const upperLabel = result.label.toUpperCase();
+        if (upperLabel === 'HIGH' || upperLabel === 'CRITICAL' || upperLabel === 'VERY HIGH') {
           fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
