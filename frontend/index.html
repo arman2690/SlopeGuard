@@ -491,12 +491,15 @@
       lucide.createIcons();
       btn.disabled = true;
 
+      const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
+
       try {
         const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated."
+            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated.",
+            emails: savedEmails
           })
         });
 
@@ -537,6 +540,15 @@
       }
     }
 
+    // Reset button color when typing a new email
+    document.getElementById('sub-contact').addEventListener('input', () => {
+        const btn = document.getElementById('btn-subscribe');
+        btn.disabled = false;
+        btn.innerHTML = 'Subscribe';
+        btn.classList.remove('bg-success', 'hover:bg-green-600');
+        btn.classList.add('bg-info', 'hover:bg-blue-600');
+    });
+
     async function subscribeUser() {
       const input = document.getElementById('sub-contact').value.trim();
       if (!input || !input.includes('@')) return alert("Please enter a valid email address to subscribe.");
@@ -555,9 +567,16 @@
         
         if (!res.ok) throw new Error("Failed to subscribe");
 
+        // Save to LocalStorage so it persists across reloads and server sleeps
+        const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
+        if (!savedEmails.includes(input)) {
+            savedEmails.push(input);
+            localStorage.setItem('slopeguard_emails', JSON.stringify(savedEmails));
+        }
+
         btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Subscribed`;
-        btn.classList.replace('bg-info', 'bg-success');
-        btn.classList.replace('hover:bg-blue-600', 'hover:bg-green-600');
+        btn.classList.remove('bg-info', 'hover:bg-blue-600');
+        btn.classList.add('bg-success', 'hover:bg-green-600');
         lucide.createIcons();
         
         if ("Notification" in window && Notification.permission !== "granted") {
@@ -998,11 +1017,13 @@
         // AUTOMATED EMAIL TRIGGER
         const upperLabel = result.label.toUpperCase();
         if (upperLabel === 'HIGH' || upperLabel === 'CRITICAL' || upperLabel === 'VERY HIGH') {
+          const autoSaved = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
           fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk simulated by AI. Score: ${result.score}. Immediate evacuation protocols recommended.`
+              message: `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk simulated by AI. Score: ${result.score}. Immediate evacuation protocols recommended.`,
+              emails: autoSaved
             })
           }).then(async res => {
             if(res.ok) {

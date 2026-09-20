@@ -187,12 +187,13 @@ def subscribe(body: SubscribeRequest):
         _memory_subscribers.append(contact)
     return {"status": "subscribed", "contact": contact}
 
-def _send_emailjs_blast(message: str):
+def _send_emailjs_blast(message: str, emails: list[str] = None):
     service_id = os.environ.get("EMAILJS_SERVICE_ID", "service_gw9dtvj")
     template_id = os.environ.get("EMAILJS_TEMPLATE_ID", "template_mgrp4za")
     public_key = os.environ.get("EMAILJS_PUBLIC_KEY", "mzMO2sJPbhu54CaIO")
 
-    if not _memory_subscribers:
+    targets = list(set(_memory_subscribers + (emails or [])))
+    if not targets:
         return []
 
     import urllib.request
@@ -201,7 +202,7 @@ def _send_emailjs_blast(message: str):
     results = []
     url = 'https://api.emailjs.com/api/v1.0/email/send'
 
-    for email_addr in _memory_subscribers:
+    for email_addr in targets:
         try:
             payload = {
                 "service_id": service_id,
@@ -226,9 +227,8 @@ def _send_emailjs_blast(message: str):
 
 @router.post("/dispatch-email-blast")
 def dispatch_email_blast(body: BlastRequest):
-    if not _memory_subscribers:
+    results = _send_emailjs_blast(body.message, body.emails)
+    if not results:
         raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
-    
-    results = _send_emailjs_blast(body.message)
     return {"status": "completed", "results": results}
 

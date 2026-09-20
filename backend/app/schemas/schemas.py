@@ -99,3 +99,4 @@ class SubscribeRequest(BaseModel):
 
 class BlastRequest(BaseModel):
     message: str
+    emails: list[str] = []
