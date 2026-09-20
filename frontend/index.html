@@ -684,7 +684,7 @@
       style: MAP_STYLE, 
       center: NER_CENTER, 
       zoom: window.innerWidth < 768 ? 5.2 : 6, 
-      pitch: 60,
+      pitch: 45,
       interactive: false, 
       attributionControl: false,
       maxBounds: NE_BOUNDS 
@@ -755,7 +755,7 @@
     function loadDashMarkers() {
       RISK_ZONES.forEach(z => {
         const el = document.createElement('div');
-        el.className = 'w-1.5 h-1.5 md:w-2 md:h-2 rounded-full';
+        el.className = 'w-1.5 h-1.5 md:w-2 md:h-2 rounded-full animate-pulse';
         el.style.backgroundColor = z.color;
         el.style.boxShadow = `0 0 8px ${z.color}`;
         new maplibregl.Marker({element: el}).setLngLat([z.lon, z.lat]).addTo(dashMap);
@@ -777,19 +777,13 @@
       });
     }
 
-    let isSpinning = true;
-    function rotateCamera(timestamp) {
-      if (isSpinning && !document.getElementById('view-dashboard').classList.contains('hidden')) {
-        dashMap.rotateTo((timestamp / 300) % 360, { duration: 0 });
-      }
-      requestAnimationFrame(rotateCamera);
-    }
+    
 
     dashMap.on('load', () => {
       setupMapLayers(dashMap);
       dashMap.setTerrain({ source: 'terrain', exaggeration: 1.5 });
       loadDashMarkers();
-      rotateCamera(0);
+      
     });
 
     bigMap.on('load', () => {
