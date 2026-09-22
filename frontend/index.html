@@ -188,6 +188,19 @@
           <h1 class="text-xl md:text-2xl font-semibold mb-1">Overview</h1>
           <p class="text-xs md:text-sm text-secondary mb-6 md:mb-8">AI-powered terrain analysis and risk monitoring.</p>
 
+          <div class="bg-surface border border-info/30 p-5 rounded-xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
+            <div class="absolute inset-0 bg-info/5"></div>
+            <div class="relative z-10 flex-1">
+              <h3 class="text-sm font-medium text-info mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4"></i> Public Early Warning Registry</h3>
+              <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
+            </div>
+            <div class="relative z-10 flex w-full md:w-auto gap-2">
+              <input type="email" id="sub-contact" placeholder="Email Address" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
+              <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
+            </div>
+          </div>
+        </div>
+
           <div class="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-6 md:mb-8">
             <div class="bg-surface border border-border p-4 md:p-5 rounded-xl">
               <div class="text-muted text-[10px] md:text-xs font-medium mb-1 md:mb-2 uppercase tracking-wider flex items-center gap-1 md:gap-2"><i data-lucide="target" class="w-3 h-3 md:w-3.5 md:h-3.5"></i> Zones</div>
@@ -239,18 +252,7 @@
             </div>
           </div>
 
-          <div class="bg-surface border border-info/30 p-5 rounded-xl mb-8 flex flex-col md:flex-row items-center justify-between gap-4 relative overflow-hidden">
-            <div class="absolute inset-0 bg-info/5"></div>
-            <div class="relative z-10 flex-1">
-              <h3 class="text-sm font-medium text-info mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4"></i> Public Early Warning Registry</h3>
-              <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
-            </div>
-            <div class="relative z-10 flex w-full md:w-auto gap-2">
-              <input type="email" id="sub-contact" placeholder="Email Address" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
-              <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
-            </div>
-          </div>
-        </div>
+          
       </div>
 
       <!-- ===== MAP ===== -->
