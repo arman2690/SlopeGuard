@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -776,9 +776,16 @@
         const el = document.createElement('div');
         el.className = 'w-1.5 h-1.5 md:w-2 md:h-2 rounded-full animate-pulse';
         el.style.backgroundColor = z.color;
-        el.style.boxShadow = `0 0 8px ${z.color}`;
+        el.style.boxShadow = `0 0 10px ${z.color}`;
         new maplibregl.Marker({element: el}).setLngLat([z.lon, z.lat]).addTo(dashMap);
       });
+    }
+
+    function cinematicPan(timestamp) {
+      if (!document.getElementById('view-dashboard').classList.contains('hidden')) {
+          dashMap.rotateTo((timestamp / 1500) % 360, { duration: 0 });
+      }
+      requestAnimationFrame(cinematicPan);
     }
 
     function loadBigMarkers() {
@@ -802,7 +809,7 @@
       setupMapLayers(dashMap);
       dashMap.setTerrain({ source: 'terrain', exaggeration: 1.5 });
       loadDashMarkers();
-      
+      cinematicPan(0);
     });
 
     bigMap.on('load', () => {
@@ -1177,5 +1184,6 @@
   </script>
 </body>
 </html>
+
 
 
