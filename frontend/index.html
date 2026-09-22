@@ -780,13 +780,6 @@
       });
     }
 
-    function cinematicPan(timestamp) {
-      if (!document.getElementById('view-dashboard').classList.contains('hidden')) {
-          dashMap.rotateTo((timestamp / 1500) % 360, { duration: 0 });
-      }
-      requestAnimationFrame(cinematicPan);
-    }
-
     function loadBigMarkers() {
       RISK_ZONES.forEach(z => {
         const el = createMarkerElement(z);
@@ -823,7 +816,7 @@
       // Start markers and pan after flyTo finishes
       setTimeout(() => {
         loadDashMarkers();
-        cinematicPan(0);
+        
       }, 4800);
     });
 
