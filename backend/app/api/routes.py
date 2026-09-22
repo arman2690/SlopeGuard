@@ -60,21 +60,20 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks):
     }
     db.insert_prediction(record)  # no-op if DB not connected
 
-    # AUTOMATED EMAIL TRIGGER
+    # AUTOMATED EMAIL & WEB PUSH TRIGGER WHEN HIGH RISK DETECTED
     if result["risk_level"] in ["HIGH", "VERY_HIGH"]:
-        if _memory_subscribers:
-            auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district}, {body.state}. Immediate evacuation protocols recommended."
-            background_tasks.add_task(_send_emailjs_blast, auto_msg)
+        auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district or 'Monitored Zone'}, {body.state or 'NE India'} (Score: {result['risk_score']}/100). Immediate evacuation protocols recommended."
+        background_tasks.add_task(_send_emailjs_blast, auto_msg)
         
-        # Web Push Trigger
-        push_msg = json.dumps({
-            "title": f"{result['risk_level']} Risk Alert",
-            "body": f"Landslide risk detected in {body.district}, {body.state}.",
+        # Web Push Payload for citizens/subscribers
+        push_payload = {
+            "title": f"🚨 {result['risk_level']} LANDSLIDE RISK ALERT",
+            "body": f"Critical slope instability detected in {body.district or 'Monitored Area'}, {body.state or 'NE India'} (Score: {result['risk_score']}/100). Take precautions.",
             "icon": "/icons/icon-192x192.png",
             "badge": "/icons/icon-192x192.png",
             "url": "/"
-        })
-        background_tasks.add_task(_send_web_push_blast, push_msg)
+        }
+        background_tasks.add_task(_send_web_push_blast, push_payload)
 
     return {**result, "data_mode": config.data_mode()}
 
@@ -301,13 +300,31 @@ def _send_web_push_blast(message: str):
             endpoints_seen.add(mem_sub["endpoint"])
         
     import json
-    payload = json.dumps({
-        "title": "🚨 SLOPEGUARD EMERGENCY ALERT",
-        "body": message,
-        "icon": "/icons/icon-192x192.png",
-        "badge": "/icons/icon-192x192.png",
-        "url": "/"
-    })
+    if isinstance(message, dict):
+        payload = json.dumps(message)
+    elif isinstance(message, str):
+        try:
+            parsed = json.loads(message)
+            if isinstance(parsed, dict) and "body" in parsed:
+                payload = message
+            else:
+                payload = json.dumps({
+                    "title": "🚨 HIGH LANDSLIDE RISK ALERT",
+                    "body": message,
+                    "icon": "/icons/icon-192x192.png",
+                    "badge": "/icons/icon-192x192.png",
+                    "url": "/"
+                })
+        except Exception:
+            payload = json.dumps({
+                "title": "🚨 HIGH LANDSLIDE RISK ALERT",
+                "body": message,
+                "icon": "/icons/icon-192x192.png",
+                "badge": "/icons/icon-192x192.png",
+                "url": "/"
+            })
+    else:
+        payload = json.dumps({"title": "🚨 HIGH LANDSLIDE RISK ALERT", "body": str(message), "icon": "/icons/icon-192x192.png", "url": "/"})
     
     results = []
     for sub in subs:

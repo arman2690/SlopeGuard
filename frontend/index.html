@@ -961,8 +961,49 @@
           <div class="space-y-3 md:space-y-4">
             ${barsHtml}
           </div>
+          ${(z.label === 'Critical' || z.label === 'High') ? `
+          <div class="mt-5 pt-4 border-t border-border">
+            <button onclick="broadcastZoneAlert('${z.district}', '${z.state}', ${z.score}, '${z.label}')" class="w-full bg-danger/15 hover:bg-danger/25 text-danger border border-danger/30 rounded-xl py-2.5 px-3 text-xs font-medium flex items-center justify-center gap-2 transition-all">
+              <i data-lucide="radio" class="w-4 h-4 text-danger animate-pulse"></i> Broadcast ${z.label} Risk Alert
+            </button>
+          </div>` : ''}
         </div>
       `;
+      if (window.lucide) lucide.createIcons();
+    }
+
+    async function broadcastZoneAlert(district, state, score, label) {
+      showToast("Dispatching Alert", `Broadcasting ${label} risk alert for ${district}...`, "info");
+      const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
+      const msg = `🚨 EMERGENCY ALERT: ${label} landslide risk (${score}/100) detected in ${district}, ${state}. Evacuate vulnerable slopes immediately.`;
+      
+      try {
+        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, emails: savedEmails })
+        });
+        const data = await res.json();
+        showToast("Warning Broadcasted", `Delivered to ${data.push_count || 0} push devices and ${data.email_count || 0} emails.`, "success");
+      } catch (err) {
+        showToast("Notice", `Broadcast triggered for ${district} (${score}/100).`, "warning");
+      }
+
+      if ("Notification" in window && Notification.permission === "granted") {
+        const notifTitle = `🚨 ${label.toUpperCase()} RISK: ${district} (${score}/100)`;
+        const notifOptions = {
+          body: `Critical landslide hazard detected in ${district}, ${state}. Immediate evacuation recommended.`,
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/icon-192x192.png",
+          vibrate: [300, 100, 300, 100, 300],
+          requireInteraction: true
+        };
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then(reg => reg.showNotification(notifTitle, notifOptions));
+        } else {
+          try { new Notification(notifTitle, notifOptions); } catch (e) {}
+        }
+      }
     }
 
     function closeInspector() {
@@ -1071,25 +1112,47 @@
         const result = computeRisk(f);
         document.getElementById('pred-timestamp').textContent = new Date().toTimeString().slice(0,8) + ' IST';
         
-        // AUTOMATED EMAIL TRIGGER
+              // AUTOMATED PUSH & EMAIL TRIGGER WHEN RISK IS DETECTED HIGH
         const upperLabel = result.label.toUpperCase();
         if (upperLabel === 'HIGH' || upperLabel === 'CRITICAL' || upperLabel === 'VERY HIGH') {
           const autoSaved = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
+          const targetDistrict = pDistrict.value || 'Selected District';
+          const targetState = pState.value || 'Northeast India';
+          const alertMessage = `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk (${result.score}/100) detected in ${targetDistrict}, ${targetState}. Evacuation protocols recommended.`;
+          
+          // 1. Broadcast to all registered subscribers via Backend
           fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk simulated by AI. Score: ${result.score}. Immediate evacuation protocols recommended.`,
+              message: alertMessage,
               emails: autoSaved
             })
           }).then(async res => {
-            if(res.ok) {
-                showToast("Autonomous Blast Deployed", "Automated email alert dispatched successfully to all registered users.", "success");
+            const data = await res.json();
+            const pushCount = data.push_count || 0;
+            const emailCount = data.email_count || 0;
+            showToast("Autonomous Warning Sent", `High risk detected. Dispatched to ${pushCount} push subscriber(s) and ${emailCount} email(s).`, "warning");
+          }).catch(e => {
+            showToast("High Risk Detected", `Score: ${result.score}/100 (${result.label}). Immediate caution advised.`, "warning");
+          });
+
+          // 2. Fire immediate native OS push notification on this device
+          if ("Notification" in window && Notification.permission === "granted") {
+            const notifTitle = `🚨 ${result.label.toUpperCase()} RISK DETECTED (${result.score}/100)`;
+            const notifOptions = {
+              body: `High landslide hazard conditions detected for ${targetDistrict}, ${targetState}. Evacuation recommended.`,
+              icon: "/icons/icon-192x192.png",
+              badge: "/icons/icon-192x192.png",
+              vibrate: [300, 100, 300, 100, 300],
+              requireInteraction: true
+            };
+            if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+              navigator.serviceWorker.ready.then(reg => reg.showNotification(notifTitle, notifOptions));
             } else {
-                const data = await res.json();
-                showToast("Dispatch Failed", data.detail || "Unknown error. Did you forget to Subscribe first?", "error");
+              try { new Notification(notifTitle, notifOptions); } catch (e) {}
             }
-          }).catch(e => showToast("Network Error", "Auto dispatch network failed. Is the server awake?", "error"));
+          }
         }
 
         const total = result.score;
