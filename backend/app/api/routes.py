@@ -241,10 +241,18 @@ def _send_emailjs_blast(message: str, emails: list[str] = None):
 
 @router.post("/dispatch-email-blast")
 def dispatch_email_blast(body: BlastRequest):
-    results = _send_emailjs_blast(body.message, body.emails)
-    if not results:
-        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
-    return {"status": "completed", "results": results}
+    email_results = _send_emailjs_blast(body.message, body.emails)
+    push_results = _send_web_push_blast(body.message)
+    
+    total_results = email_results + push_results
+    if not total_results:
+        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts (neither email nor web push).")
+    return {
+        "status": "completed",
+        "results": total_results,
+        "email_count": len(email_results),
+        "push_count": len(push_results),
+    }
 
 
 @router.get("/notifications/vapidPublicKey")
@@ -285,20 +293,36 @@ def _send_web_push_blast(message: str):
                 "endpoint": row["endpoint"],
                 "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}
             })
-    else:
-        subs = _memory_push_subscriptions
+    
+    # Merge with in-memory subscriptions (dedup by endpoint)
+    endpoints_seen = {s["endpoint"] for s in subs}
+    for mem_sub in _memory_push_subscriptions:
+        if mem_sub.get("endpoint") not in endpoints_seen:
+            subs.append(mem_sub)
+            endpoints_seen.add(mem_sub["endpoint"])
         
+    import json
+    payload = json.dumps({
+        "title": "🚨 SLOPEGUARD EMERGENCY ALERT",
+        "body": message,
+        "icon": "/icons/icon-192x192.png",
+        "badge": "/icons/icon-192x192.png",
+        "url": "/"
+    })
+    
     results = []
     for sub in subs:
         try:
             webpush(
                 subscription_info=sub,
-                data=message,
+                data=payload,
                 vapid_private_key=config.VAPID_PRIVATE_KEY,
                 vapid_claims=vapid_claims
             )
-            results.append({"endpoint": sub["endpoint"], "status": "sent"})
+            results.append({"endpoint": sub["endpoint"], "status": "sent", "type": "webpush"})
         except WebPushException as ex:
-            results.append({"endpoint": sub["endpoint"], "status": "failed", "error": str(ex)})
+            results.append({"endpoint": sub["endpoint"], "status": "failed", "type": "webpush", "error": str(ex)})
+        except Exception as ex:
+            results.append({"endpoint": sub.get("endpoint", "unknown"), "status": "failed", "type": "webpush", "error": str(ex)})
     return results
 
