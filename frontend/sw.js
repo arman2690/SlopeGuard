@@ -1,4 +1,4 @@
-const CACHE_NAME = 'slopeguard-v2';
+const CACHE_NAME = 'slopeguard-v3';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -66,10 +66,12 @@ self.addEventListener('push', (event) => {
     body: data.body,
     icon: data.icon || '/icons/icon-192x192.png',
     badge: data.badge || '/icons/icon-192x192.png',
-    vibrate: [200, 100, 200, 100, 200, 100, 200],
+    vibrate: [300, 100, 300, 100, 300],
     data: {
-      url: data.url
+      url: data.url || '/'
     },
+    tag: 'slopeguard-emergency-alert',
+    renotify: true,
     requireInteraction: true
   };
 
