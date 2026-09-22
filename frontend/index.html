@@ -525,12 +525,26 @@
         const pushCount = data.push_count || 0;
         const total = emailCount + pushCount;
 
-        // Show push notification locally as well if enabled
+        // Show push notification on this device if enabled
         if ("Notification" in window && Notification.permission === "granted") {
-          new Notification("EMERGENCY: SlopeGuard Alert", {
+          const notifTitle = "🚨 EMERGENCY: SlopeGuard Alert";
+          const notifOptions = {
             body: `Critical landslide risk detected in NE India. Broadcast dispatched to ${total} subscribers.`,
+            icon: "/icons/icon-192x192.png",
+            badge: "/icons/icon-192x192.png",
+            vibrate: [200, 100, 200, 100, 200],
             requireInteraction: true
-          });
+          };
+
+          if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+            navigator.serviceWorker.ready.then(reg => {
+              reg.showNotification(notifTitle, notifOptions);
+            }).catch(() => {
+              try { new Notification(notifTitle, notifOptions); } catch (e) {}
+            });
+          } else {
+            try { new Notification(notifTitle, notifOptions); } catch (e) {}
+          }
         }
 
         if (total > 0) {
@@ -1282,13 +1296,24 @@
 
     async function subscribeToPush() {
       const btn = document.getElementById('btn-push-subscribe');
-      btn.innerHTML = 'Subscribing...';
+      btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i> Subscribing...';
+      if (window.lucide) lucide.createIcons();
+      
       const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
       
       try {
+        if (!('Notification' in window)) {
+          throw new Error('This browser does not support desktop notifications.');
+        }
+
+        const permission = await Notification.requestPermission();
+        if (permission !== 'granted') {
+          throw new Error('Notification permission was blocked or dismissed. Please allow notifications in site settings.');
+        }
+
         const swReg = await navigator.serviceWorker.ready;
         const res = await fetch(`${API_BASE}/notifications/vapidPublicKey`);
-        if (!res.ok) throw new Error('VAPID key not configured on backend');
+        if (!res.ok) throw new Error('VAPID key not configured on backend.');
         const { publicKey } = await res.json();
         
         const sub = await swReg.pushManager.subscribe({
@@ -1306,21 +1331,30 @@
           })
         });
         
-        if (!saveRes.ok) throw new Error('Failed to save subscription to server');
+        if (!saveRes.ok) throw new Error('Failed to save subscription to server.');
+
+        // Show immediate test confirmation notification on the device
+        try {
+          swReg.showNotification("🛡️ SlopeGuard Alerts Active", {
+            body: "You are now registered to receive real-time landslide emergency warnings.",
+            icon: "/icons/icon-192x192.png",
+            badge: "/icons/icon-192x192.png"
+          });
+        } catch (err) {}
         
         showToast('Subscribed!', 'You will now receive native push notifications.', 'success');
-        btn.innerHTML = 'Push Enabled';
+        btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Push Enabled';
+        btn.classList.remove('bg-surface2');
+        btn.classList.add('bg-success', 'text-white');
         btn.disabled = true;
+        if (window.lucide) lucide.createIcons();
       } catch (e) {
         console.error(e);
-        showToast('Error', e.message || 'Failed to subscribe to push notifications.', 'error');
-        btn.innerHTML = '<i data-lucide="bell-ring" class="w-3 h-3 md:w-4 md:h-4"></i> Enable Web Push Alerts';
+        showToast('Notification Setup', e.message || 'Failed to subscribe to push notifications.', 'error');
+        btn.innerHTML = '<i data-lucide="bell-ring" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Enable Push Alerts';
         lucide.createIcons();
       }
     }
   </script>
 </body>
 </html>
-
-
-
