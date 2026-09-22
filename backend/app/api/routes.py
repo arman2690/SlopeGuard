@@ -245,13 +245,12 @@ def dispatch_email_blast(body: BlastRequest):
     push_results = _send_web_push_blast(body.message)
     
     total_results = email_results + push_results
-    if not total_results:
-        raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts (neither email nor web push).")
     return {
         "status": "completed",
         "results": total_results,
         "email_count": len(email_results),
         "push_count": len(push_results),
+        "message": "Alert dispatched successfully." if total_results else "Alert simulated. No active email or push subscribers found. Subscribe above to receive live alerts."
     }
 
 

@@ -518,15 +518,25 @@
 
         const data = await res.json();
         if (!res.ok) {
-          throw new Error(data.detail || 'Failed to dispatch email blast.');
+          throw new Error(data.detail || 'Failed to dispatch alert blast.');
         }
+
+        const emailCount = data.email_count || 0;
+        const pushCount = data.push_count || 0;
+        const total = emailCount + pushCount;
 
         // Show push notification locally as well if enabled
         if ("Notification" in window && Notification.permission === "granted") {
           new Notification("EMERGENCY: SlopeGuard Alert", {
-            body: `Critical landslide risk detected in NE India. Email blast dispatched to ${data.results?.length || 0} subscribers.`,
+            body: `Critical landslide risk detected in NE India. Broadcast dispatched to ${total} subscribers.`,
             requireInteraction: true
           });
+        }
+
+        if (total > 0) {
+          showToast("Alert Broadcast Dispatched", `Delivered to ${emailCount} email(s) and ${pushCount} push subscriber(s).`, "success");
+        } else {
+          showToast("Alert Simulated", "0 active subscribers found. Add your email or click 'Enable Push Alerts' above to receive alerts directly!", "warning");
         }
 
         btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Blast Dispatched`;
@@ -543,10 +553,10 @@
             btn.disabled = false;
             lucide.createIcons();
           }, 400);
-        }, 1500);
+        }, 1200);
 
       } catch (err) {
-        alert("Alert Dispatch Error: " + err.message);
+        showToast("Alert Dispatch Error", err.message || "Failed to dispatch alert.", "error");
         btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Dispatch Alert`;
         btn.disabled = false;
         lucide.createIcons();
