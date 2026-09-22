@@ -110,3 +110,5 @@ class PushSubscriptionKeys(BaseModel):
 class PushSubscription(BaseModel):
     endpoint: str
     keys: PushSubscriptionKeys
+    device: Optional[str] = "Device"
+    user_agent: Optional[str] = None

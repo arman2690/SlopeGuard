@@ -15,7 +15,7 @@ from ..schemas.schemas import (
     PredictRequest, PredictResponse, RiskZone, WeatherResponse,
     Alert, AlertCreate, DataSourceStatus, PushSubscription
 )
-from ..services import config, db, demo_data
+from ..services import config, db, demo_data, push_store
 from ..data_sources import weather as weather_source
 from ..data_sources import isro, bhuvan, bhusanket, earth_engine
 
@@ -259,9 +259,16 @@ def vapid_public_key():
         raise HTTPException(status_code=500, detail="VAPID_PUBLIC_KEY not configured on server.")
     return {"publicKey": config.VAPID_PUBLIC_KEY}
 
+@router.get("/notifications/subscribers-count")
+def get_subscribers_count():
+    return push_store.count_subscriptions()
+
 @router.post("/notifications/subscribe")
 def subscribe_push(body: PushSubscription):
     sub_dict = body.model_dump()
+    # Save to persistent disk store (remembers phones across restarts)
+    push_store.save_subscription(sub_dict)
+    
     if sub_dict not in _memory_push_subscriptions:
         _memory_push_subscriptions.append(sub_dict)
     
@@ -274,10 +281,10 @@ def subscribe_push(body: PushSubscription):
         }
         db.insert_push_subscription(record)
     
-    return {"status": "subscribed"}
+    return {"status": "subscribed", "device": body.device}
 
 
-def _send_web_push_blast(message: str):
+def _send_web_push_blast(message):
     if not config.VAPID_PRIVATE_KEY or not config.VAPID_PUBLIC_KEY:
         return []
 
@@ -289,11 +296,18 @@ def _send_web_push_blast(message: str):
         for row in db_subs:
             subs.append({
                 "endpoint": row["endpoint"],
-                "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}
+                "keys": {"p256dh": row["p256dh"], "auth": row["auth"]},
+                "device": row.get("user_agent", "Device")
             })
     
-    # Merge with in-memory subscriptions (dedup by endpoint)
+    # Merge with persistent disk store (remembers phones permanently)
+    stored_subs = push_store.load_subscriptions()
     endpoints_seen = {s["endpoint"] for s in subs}
+    for st_sub in stored_subs:
+        if st_sub.get("endpoint") not in endpoints_seen:
+            subs.append(st_sub)
+            endpoints_seen.add(st_sub["endpoint"])
+
     for mem_sub in _memory_push_subscriptions:
         if mem_sub.get("endpoint") not in endpoints_seen:
             subs.append(mem_sub)

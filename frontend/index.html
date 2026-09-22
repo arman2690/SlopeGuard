@@ -1357,10 +1357,69 @@
       return outputArray;
     }
 
-    async function subscribeToPush() {
+    function getDeviceType() {
+      const ua = navigator.userAgent;
+      if (/android/i.test(ua)) return 'Android Phone';
+      if (/iphone/i.test(ua)) return 'iPhone';
+      if (/ipad|tablet/i.test(ua)) return 'Tablet';
+      if (/mobile/i.test(ua)) return 'Mobile Phone';
+      return 'Desktop Browser';
+    }
+
+    async function checkExistingPushSubscription() {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       const btn = document.getElementById('btn-push-subscribe');
-      btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i> Subscribing...';
-      if (window.lucide) lucide.createIcons();
+      const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
+      
+      try {
+        const swReg = await navigator.serviceWorker.ready;
+        const sub = await swReg.pushManager.getSubscription();
+        
+        if (sub) {
+          // Device is already subscribed! Update UI to remember it
+          localStorage.setItem('slopeguard_push_registered', 'true');
+          if (btn) {
+            btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Push Enabled';
+            btn.classList.remove('bg-surface2');
+            btn.classList.add('bg-success', 'text-white');
+            btn.disabled = true;
+            btn.title = `Registered as ${getDeviceType()}`;
+            if (window.lucide) lucide.createIcons();
+          }
+
+          // Quietly sync with backend so the server always remembers this device across restarts
+          const subJSON = sub.toJSON();
+          fetch(`${API_BASE}/notifications/subscribe`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({
+              endpoint: subJSON.endpoint,
+              keys: subJSON.keys,
+              device: getDeviceType(),
+              user_agent: navigator.userAgent
+            })
+          }).catch(() => {});
+        } else if (localStorage.getItem('slopeguard_push_registered') === 'true' && Notification.permission === 'granted') {
+          // If local storage says registered and permission is granted, auto-re-subscribe
+          subscribeToPush(true);
+        }
+      } catch (err) {
+        console.warn('Existing subscription check error:', err);
+      }
+    }
+
+    // Run check on page load and when service worker activates
+    window.addEventListener('load', checkExistingPushSubscription);
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.ready.then(checkExistingPushSubscription);
+    }
+
+    async function subscribeToPush(isAutoSync = false) {
+      const btn = document.getElementById('btn-push-subscribe');
+      if (!isAutoSync && btn) {
+        btn.innerHTML = '<i data-lucide="loader" class="w-3.5 h-3.5 animate-spin inline"></i> Subscribing...';
+        if (window.lucide) lucide.createIcons();
+      }
       
       const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
       
@@ -1379,43 +1438,62 @@
         if (!res.ok) throw new Error('VAPID key not configured on backend.');
         const { publicKey } = await res.json();
         
-        const sub = await swReg.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlB64ToUint8Array(publicKey)
-        });
+        let sub = await swReg.pushManager.getSubscription();
+        if (!sub) {
+          sub = await swReg.pushManager.subscribe({
+            userVisibleOnly: true,
+            applicationServerKey: urlB64ToUint8Array(publicKey)
+          });
+        }
         
         const subJSON = sub.toJSON();
+        const deviceType = getDeviceType();
         const saveRes = await fetch(`${API_BASE}/notifications/subscribe`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
             endpoint: subJSON.endpoint,
-            keys: subJSON.keys
+            keys: subJSON.keys,
+            device: deviceType,
+            user_agent: navigator.userAgent
           })
         });
         
-        if (!saveRes.ok) throw new Error('Failed to save subscription to server.');
+        if (!saveRes.ok) throw new Error('Failed to register subscription on server.');
 
-        // Show immediate test confirmation notification on the device
-        try {
-          swReg.showNotification("🛡️ SlopeGuard Alerts Active", {
-            body: "You are now registered to receive real-time landslide emergency warnings.",
-            icon: "/icons/icon-192x192.png",
-            badge: "/icons/icon-192x192.png"
-          });
-        } catch (err) {}
-        
-        showToast('Subscribed!', 'You will now receive native push notifications.', 'success');
-        btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Push Enabled';
-        btn.classList.remove('bg-surface2');
-        btn.classList.add('bg-success', 'text-white');
-        btn.disabled = true;
-        if (window.lucide) lucide.createIcons();
+        // Remember in localStorage that this phone/browser is subscribed
+        localStorage.setItem('slopeguard_push_registered', 'true');
+        localStorage.setItem('slopeguard_device_type', deviceType);
+
+        // Show immediate test confirmation notification on the device if user clicked
+        if (!isAutoSync) {
+          try {
+            swReg.showNotification("🛡️ SlopeGuard Alerts Active", {
+              body: `Your ${deviceType} is now registered to receive real-time landslide warnings.`,
+              icon: "/icons/icon-192x192.png",
+              badge: "/icons/icon-192x192.png"
+            });
+          } catch (err) {}
+          showToast('Device Registered!', `Your ${deviceType} will now receive emergency push warnings.`, 'success');
+        }
+
+        if (btn) {
+          btn.innerHTML = '<i data-lucide="check" class="w-3.5 h-3.5 inline"></i> Push Enabled';
+          btn.classList.remove('bg-surface2');
+          btn.classList.add('bg-success', 'text-white');
+          btn.disabled = true;
+          btn.title = `Registered as ${deviceType}`;
+          if (window.lucide) lucide.createIcons();
+        }
       } catch (e) {
         console.error(e);
-        showToast('Notification Setup', e.message || 'Failed to subscribe to push notifications.', 'error');
-        btn.innerHTML = '<i data-lucide="bell-ring" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Enable Push Alerts';
-        lucide.createIcons();
+        if (!isAutoSync) {
+          showToast('Notification Setup', e.message || 'Failed to subscribe to push notifications.', 'error');
+          if (btn) {
+            btn.innerHTML = '<i data-lucide="bell-ring" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Enable Push Alerts';
+            lucide.createIcons();
+          }
+        }
       }
     }
   </script>
