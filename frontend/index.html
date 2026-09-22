@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en" class="dark">
 <head>
   <meta charset="UTF-8">
@@ -701,12 +701,11 @@
     const dashMap = new maplibregl.Map({ 
       container: 'dash-map', 
       style: MAP_STYLE, 
-      center: NER_CENTER, 
-      zoom: window.innerWidth < 768 ? 5.2 : 6, 
-      pitch: 45,
+      center: [78.9629, 20.5937], // Center of India
+      zoom: 3, 
+      pitch: 0,
       interactive: false, 
-      attributionControl: false,
-      maxBounds: NE_BOUNDS 
+      attributionControl: false
     });
 
     const bigMap = new maplibregl.Map({ 
@@ -808,8 +807,25 @@
     dashMap.on('load', () => {
       setupMapLayers(dashMap);
       dashMap.setTerrain({ source: 'terrain', exaggeration: 1.5 });
-      loadDashMarkers();
-      cinematicPan(0);
+      
+      // Intro fly animation
+      setTimeout(() => {
+        dashMap.flyTo({
+          center: NER_CENTER,
+          zoom: window.innerWidth < 768 ? 5.2 : 6,
+          pitch: 45,
+          bearing: 0,
+          duration: 4000,
+          essential: true
+        });
+      }, 800);
+
+      // Start markers and pan after flyTo finishes
+      setTimeout(() => {
+        loadDashMarkers();
+        dashMap.setMaxBounds(NE_BOUNDS);
+        cinematicPan(0);
+      }, 4800);
     });
 
     bigMap.on('load', () => {
