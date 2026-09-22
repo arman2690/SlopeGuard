@@ -183,7 +183,7 @@
     <div class="flex-1 w-full h-full pt-14 md:pt-16 relative overflow-hidden" id="views-container">
 
       <!-- ===== DASHBOARD ===== -->
-      <div class="view-panel h-full overflow-y-auto p-4 md:p-8 animate-slide-up" id="view-dashboard">
+      <div class="view-panel h-full overflow-y-auto p-4 pb-32 md:p-8 md:pb-8 animate-slide-up" id="view-dashboard">
         <div class="max-w-6xl mx-auto">
           <h1 class="text-xl md:text-2xl font-semibold mb-1">Overview</h1>
           <p class="text-xs md:text-sm text-secondary mb-6 md:mb-8">AI-powered terrain analysis and risk monitoring.</p>
@@ -282,7 +282,7 @@
         </div>
 
         <!-- Floating UI Bottom Left (Map Controls) -->
-        <div class="absolute bottom-4 left-4 md:bottom-6 md:left-6 z-10 flex flex-col md:flex-row gap-2 pointer-events-auto">
+        <div class="absolute bottom-28 left-4 md:bottom-6 md:left-6 z-10 flex flex-col md:flex-row gap-2 pointer-events-auto">
           <button id="btn-satellite" class="bg-background/90 backdrop-blur-xl border border-border px-3 py-2 rounded-lg text-xs font-medium text-secondary hover:text-primary transition-colors flex items-center gap-2 shadow-lg w-fit">
             <i data-lucide="satellite" class="w-3.5 h-3.5"></i> Satellite
           </button>
@@ -305,7 +305,7 @@
       </div>
 
       <!-- ===== PREDICTIONS ===== -->
-      <div class="view-panel hidden h-full overflow-y-auto p-4 md:p-8 animate-slide-up" id="view-predict">
+      <div class="view-panel hidden h-full overflow-y-auto p-4 pb-32 md:p-8 md:pb-8 animate-slide-up" id="view-predict">
         <div class="max-w-4xl mx-auto">
           <h1 class="text-xl md:text-2xl font-semibold mb-1">Risk Simulator</h1>
           <p class="text-xs md:text-sm text-secondary mb-6 md:mb-8">Adjust site parameters to run the surrogate scoring engine.</p>
@@ -1177,3 +1177,5 @@
   </script>
 </body>
 </html>
+
+
