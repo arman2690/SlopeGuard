@@ -1,4 +1,4 @@
-const CACHE_NAME = 'slopeguard-v3';
+const CACHE_NAME = 'slopeguard-v4';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -52,20 +52,30 @@ self.addEventListener('fetch', (event) => {
 
 // Push event: receive Web Push and show notification
 self.addEventListener('push', (event) => {
-  let data = { title: 'New Alert', body: 'A new alert was received.', url: '/' };
+  let data = {
+    title: '🚨 SLOPEGUARD EMERGENCY ALERT',
+    body: 'Critical landslide risk detected in NE India. Evacuation protocols initiated.',
+    url: '/'
+  };
   
   if (event.data) {
     try {
-      data = event.data.json();
+      const parsed = event.data.json();
+      if (parsed) data = Object.assign(data, parsed);
     } catch (e) {
-      data.body = event.data.text();
+      const txt = event.data.text();
+      if (txt) data.body = txt;
     }
   }
 
+  const title = data.title || '🚨 SLOPEGUARD EMERGENCY ALERT';
+  const baseUrl = self.registration ? self.registration.scope : self.location.origin;
+  const iconUrl = new URL('icons/icon-192x192.png', baseUrl).href;
+
   const options = {
-    body: data.body,
-    icon: data.icon || '/icons/icon-192x192.png',
-    badge: data.badge || '/icons/icon-192x192.png',
+    body: data.body || 'Critical landslide risk detected in NE India. Evacuation protocols initiated.',
+    icon: iconUrl,
+    badge: iconUrl,
     vibrate: [300, 100, 300, 100, 300],
     data: {
       url: data.url || '/'
@@ -76,7 +86,9 @@ self.addEventListener('push', (event) => {
   };
 
   event.waitUntil(
-    self.registration.showNotification(data.title, options)
+    self.registration.showNotification(title, options).catch((err) => {
+      console.error('showNotification failed in sw:', err);
+    })
   );
 });
 

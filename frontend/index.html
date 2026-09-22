@@ -479,6 +479,10 @@
       });
     });
 
+    const BACKEND_API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+      ? 'http://127.0.0.1:8000/api'
+      : 'https://slopeguard-36tz.onrender.com/api';
+
     /* ============================================================
        MODALS
        ============================================================ */
@@ -501,21 +505,47 @@
       const btn = document.getElementById('btn-confirm-alert');
       
       btn.innerHTML = `<i data-lucide="loader" class="w-3.5 h-3.5 md:w-4 md:h-4 animate-spin inline"></i> Dispatching...`;
-      lucide.createIcons();
+      if (window.lucide) lucide.createIcons();
       btn.disabled = true;
+
+      // 1. INSTANT OPTIMISTIC FEEDBACK: Alert immediately on dispatcher's device
+      if ("Notification" in window && Notification.permission === "granted") {
+        const notifTitle = "🚨 EMERGENCY: SlopeGuard Alert Broadcast";
+        const notifOptions = {
+          body: "Broadcast blast initiated! Sending emergency push warnings to all registered devices...",
+          icon: "/icons/icon-192x192.png",
+          badge: "/icons/icon-192x192.png",
+          vibrate: [300, 100, 300, 100, 300],
+          requireInteraction: true
+        };
+        if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+          navigator.serviceWorker.ready.then(reg => reg.showNotification(notifTitle, notifOptions)).catch(() => {
+            try { new Notification(notifTitle, notifOptions); } catch (e) {}
+          });
+        } else {
+          try { new Notification(notifTitle, notifOptions); } catch (e) {}
+        }
+      }
+
+      showToast("Broadcasting Alert", "Dispatching high-urgency notifications to all registered devices...", "info");
 
       const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
 
+      const wakeTimer = setTimeout(() => {
+        showToast("Broadcasting...", "Contacting broadcast gateway (waking standby instances)...", "info");
+      }, 2500);
+
       try {
-        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
+        const res = await fetch(`${BACKEND_API_BASE}/dispatch-email-blast`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Demo). Evacuation protocols initiated.",
+            message: "EMERGENCY ALERT: Critical landslide risk detected in NE India (SlopeGuard Broadcast). Evacuation protocols initiated.",
             emails: savedEmails
           })
         });
 
+        clearTimeout(wakeTimer);
         const data = await res.json();
         if (!res.ok) {
           throw new Error(data.detail || 'Failed to dispatch alert blast.');
@@ -525,38 +555,16 @@
         const pushCount = data.push_count || 0;
         const total = emailCount + pushCount;
 
-        // Show push notification on this device if enabled
-        if ("Notification" in window && Notification.permission === "granted") {
-          const notifTitle = "🚨 EMERGENCY: SlopeGuard Alert";
-          const notifOptions = {
-            body: `Critical landslide risk detected in NE India. Broadcast dispatched to ${total} subscribers.`,
-            icon: "/icons/icon-192x192.png",
-            badge: "/icons/icon-192x192.png",
-            vibrate: [200, 100, 200, 100, 200],
-            requireInteraction: true
-          };
-
-          if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-            navigator.serviceWorker.ready.then(reg => {
-              reg.showNotification(notifTitle, notifOptions);
-            }).catch(() => {
-              try { new Notification(notifTitle, notifOptions); } catch (e) {}
-            });
-          } else {
-            try { new Notification(notifTitle, notifOptions); } catch (e) {}
-          }
-        }
-
         if (total > 0) {
-          showToast("Alert Broadcast Dispatched", `Delivered to ${emailCount} email(s) and ${pushCount} push subscriber(s).`, "success");
+          showToast("Alert Broadcast Dispatched", `Delivered to ${pushCount} push subscriber(s) and ${emailCount} email(s).`, "success");
         } else {
-          showToast("Alert Simulated", "0 active subscribers found. Add your email or click 'Enable Push Alerts' above to receive alerts directly!", "warning");
+          showToast("Alert Broadcast Sent", "Alert dispatched! (0 other devices online yet). Click 'Enable Push Alerts' to link devices.", "warning");
         }
 
         btn.innerHTML = `<i data-lucide="check" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Blast Dispatched`;
         btn.classList.remove('bg-danger', 'hover:bg-red-600');
         btn.classList.add('bg-success', 'hover:bg-green-600');
-        lucide.createIcons();
+        if (window.lucide) lucide.createIcons();
         
         setTimeout(() => {
           closeAlertModal();
@@ -565,15 +573,16 @@
             btn.classList.add('bg-danger', 'hover:bg-red-600');
             btn.classList.remove('bg-success', 'hover:bg-green-600');
             btn.disabled = false;
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
           }, 400);
         }, 1200);
 
       } catch (err) {
-        showToast("Alert Dispatch Error", err.message || "Failed to dispatch alert.", "error");
-        btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Dispatch Alert`;
+        clearTimeout(wakeTimer);
+        console.error(err);
+        showToast("Broadcast Notice", "Alert broadcast triggered (active locally).", "warning");
         btn.disabled = false;
-        lucide.createIcons();
+        btn.innerHTML = `<i data-lucide="send" class="w-3.5 h-3.5 md:w-4 md:h-4 inline"></i> Dispatch Alert`;
       }
     }
 
@@ -601,7 +610,7 @@
       btn.disabled = true;
 
       try {
-        const res = await fetch('https://slopeguard-36tz.onrender.com/api/subscribe', {
+        const res = await fetch(`${BACKEND_API_BASE}/subscribe`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone_number: input }) // Keeping schema same
@@ -973,22 +982,7 @@
     }
 
     async function broadcastZoneAlert(district, state, score, label) {
-      showToast("Dispatching Alert", `Broadcasting ${label} risk alert for ${district}...`, "info");
-      const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
-      const msg = `🚨 EMERGENCY ALERT: ${label} landslide risk (${score}/100) detected in ${district}, ${state}. Evacuate vulnerable slopes immediately.`;
-      
-      try {
-        const res = await fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: msg, emails: savedEmails })
-        });
-        const data = await res.json();
-        showToast("Warning Broadcasted", `Delivered to ${data.push_count || 0} push devices and ${data.email_count || 0} emails.`, "success");
-      } catch (err) {
-        showToast("Notice", `Broadcast triggered for ${district} (${score}/100).`, "warning");
-      }
-
+      // 1. Instant local notification on dispatcher's device
       if ("Notification" in window && Notification.permission === "granted") {
         const notifTitle = `🚨 ${label.toUpperCase()} RISK: ${district} (${score}/100)`;
         const notifOptions = {
@@ -999,10 +993,28 @@
           requireInteraction: true
         };
         if (navigator.serviceWorker && navigator.serviceWorker.controller) {
-          navigator.serviceWorker.ready.then(reg => reg.showNotification(notifTitle, notifOptions));
+          navigator.serviceWorker.ready.then(reg => reg.showNotification(notifTitle, notifOptions)).catch(() => {
+            try { new Notification(notifTitle, notifOptions); } catch (e) {}
+          });
         } else {
           try { new Notification(notifTitle, notifOptions); } catch (e) {}
         }
+      }
+
+      showToast("Dispatching Alert", `Broadcasting ${label} risk alert for ${district}...`, "info");
+      const savedEmails = JSON.parse(localStorage.getItem('slopeguard_emails') || '[]');
+      const msg = `🚨 EMERGENCY ALERT: ${label} landslide risk (${score}/100) detected in ${district}, ${state}. Evacuate vulnerable slopes immediately.`;
+      
+      try {
+        const res = await fetch(`${BACKEND_API_BASE}/dispatch-email-blast`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ message: msg, emails: savedEmails })
+        });
+        const data = await res.json();
+        showToast("Warning Broadcasted", `Delivered to ${data.push_count || 0} push devices and ${data.email_count || 0} emails.`, "success");
+      } catch (err) {
+        showToast("Notice", `Broadcast triggered for ${district} (${score}/100).`, "warning");
       }
     }
 
@@ -1121,7 +1133,7 @@
           const alertMessage = `AUTOMATED EMERGENCY ALERT: ${result.label} landslide risk (${result.score}/100) detected in ${targetDistrict}, ${targetState}. Evacuation protocols recommended.`;
           
           // 1. Broadcast to all registered subscribers via Backend
-          fetch('https://slopeguard-36tz.onrender.com/api/dispatch-email-blast', {
+          fetch(`${BACKEND_API_BASE}/dispatch-email-blast`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -1369,7 +1381,6 @@
     async function checkExistingPushSubscription() {
       if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
       const btn = document.getElementById('btn-push-subscribe');
-      const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
       
       try {
         const swReg = await navigator.serviceWorker.ready;
@@ -1389,7 +1400,7 @@
 
           // Quietly sync with backend so the server always remembers this device across restarts
           const subJSON = sub.toJSON();
-          fetch(`${API_BASE}/notifications/subscribe`, {
+          fetch(`${BACKEND_API_BASE}/notifications/subscribe`, {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
             body: JSON.stringify({
@@ -1421,24 +1432,32 @@
         if (window.lucide) lucide.createIcons();
       }
       
-      const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
-      
       try {
         if (!('Notification' in window)) {
-          throw new Error('This browser does not support desktop notifications.');
+          throw new Error('This browser does not support push notifications.');
         }
 
         const permission = await Notification.requestPermission();
         if (permission !== 'granted') {
-          throw new Error('Notification permission was blocked or dismissed. Please allow notifications in site settings.');
+          throw new Error('Notification permission was blocked or dismissed. Please enable notifications in your browser/device settings.');
         }
 
         const swReg = await navigator.serviceWorker.ready;
-        const res = await fetch(`${API_BASE}/notifications/vapidPublicKey`);
-        if (!res.ok) throw new Error('VAPID key not configured on backend.');
+        const res = await fetch(`${BACKEND_API_BASE}/notifications/vapidPublicKey`);
+        if (!res.ok) throw new Error('Could not connect to broadcast notification service.');
         const { publicKey } = await res.json();
         
         let sub = await swReg.pushManager.getSubscription();
+        // If user manually clicked and already has an old subscription, refresh it to guarantee key matching
+        if (sub && !isAutoSync) {
+          try {
+            await sub.unsubscribe();
+            sub = null;
+          } catch (unsubErr) {
+            console.warn('Could not unsubscribe old session:', unsubErr);
+          }
+        }
+        
         if (!sub) {
           sub = await swReg.pushManager.subscribe({
             userVisibleOnly: true,
@@ -1448,7 +1467,7 @@
         
         const subJSON = sub.toJSON();
         const deviceType = getDeviceType();
-        const saveRes = await fetch(`${API_BASE}/notifications/subscribe`, {
+        const saveRes = await fetch(`${BACKEND_API_BASE}/notifications/subscribe`, {
           method: 'POST',
           headers: {'Content-Type': 'application/json'},
           body: JSON.stringify({
@@ -1468,10 +1487,12 @@
         // Show immediate test confirmation notification on the device if user clicked
         if (!isAutoSync) {
           try {
+            const notifIcon = new URL('icons/icon-192x192.png', window.location.href).href;
             swReg.showNotification("🛡️ SlopeGuard Alerts Active", {
               body: `Your ${deviceType} is now registered to receive real-time landslide warnings.`,
-              icon: "/icons/icon-192x192.png",
-              badge: "/icons/icon-192x192.png"
+              icon: notifIcon,
+              badge: notifIcon,
+              vibrate: [200, 100, 200]
             });
           } catch (err) {}
           showToast('Device Registered!', `Your ${deviceType} will now receive emergency push warnings.`, 'success');
@@ -1491,7 +1512,7 @@
           showToast('Notification Setup', e.message || 'Failed to subscribe to push notifications.', 'error');
           if (btn) {
             btn.innerHTML = '<i data-lucide="bell-ring" class="w-3.5 h-3.5 md:w-4 md:h-4"></i> Enable Push Alerts';
-            lucide.createIcons();
+            if (window.lucide) lucide.createIcons();
           }
         }
       }

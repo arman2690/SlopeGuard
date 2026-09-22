@@ -60,6 +60,22 @@ def save_subscription(sub_data: dict) -> list[dict]:
     return subs
 
 
+def remove_subscription(endpoint: str) -> list[dict]:
+    _ensure_dir()
+    subs = load_subscriptions()
+    original_len = len(subs)
+    subs = [s for s in subs if s.get("endpoint") != endpoint]
+    if len(subs) != original_len:
+        try:
+            temp_file = DATA_FILE.with_suffix(".tmp")
+            temp_file.write_text(json.dumps(subs, indent=2), encoding="utf-8")
+            temp_file.replace(DATA_FILE)
+            logger.info(f"Removed expired push subscription: {endpoint[:30]}...")
+        except Exception as e:
+            logger.error(f"Failed to remove subscription from disk: {e}")
+    return subs
+
+
 def count_subscriptions() -> dict:
     subs = load_subscriptions()
     phones = sum(1 for s in subs if "phone" in s.get("device", "").lower() or "mobile" in s.get("device", "").lower())

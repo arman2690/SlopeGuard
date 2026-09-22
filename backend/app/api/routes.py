@@ -5,6 +5,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pywebpush import webpush, WebPushException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
@@ -60,12 +61,11 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks):
     }
     db.insert_prediction(record)  # no-op if DB not connected
 
-    # AUTOMATED EMAIL & WEB PUSH TRIGGER WHEN HIGH RISK DETECTED
+    # AUTOMATED WEB PUSH & EMAIL TRIGGER WHEN HIGH RISK DETECTED
     if result["risk_level"] in ["HIGH", "VERY_HIGH"]:
         auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district or 'Monitored Zone'}, {body.state or 'NE India'} (Score: {result['risk_score']}/100). Immediate evacuation protocols recommended."
-        background_tasks.add_task(_send_emailjs_blast, auto_msg)
         
-        # Web Push Payload for citizens/subscribers
+        # 1. Send Web Push FIRST (ultrafast, parallel direct delivery to phones)
         push_payload = {
             "title": f"🚨 {result['risk_level']} LANDSLIDE RISK ALERT",
             "body": f"Critical slope instability detected in {body.district or 'Monitored Area'}, {body.state or 'NE India'} (Score: {result['risk_score']}/100). Take precautions.",
@@ -74,6 +74,9 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks):
             "url": "/"
         }
         background_tasks.add_task(_send_web_push_blast, push_payload)
+        
+        # 2. Email blast in background
+        background_tasks.add_task(_send_emailjs_blast, auto_msg)
 
     return {**result, "data_mode": config.data_mode()}
 
@@ -238,50 +241,42 @@ def _send_emailjs_blast(message: str, emails: list[str] = None):
 
     return results
 
-@router.post("/dispatch-email-blast")
-def dispatch_email_blast(body: BlastRequest):
-    email_results = _send_emailjs_blast(body.message, body.emails)
-    push_results = _send_web_push_blast(body.message)
-    
-    total_results = email_results + push_results
-    return {
-        "status": "completed",
-        "results": total_results,
-        "email_count": len(email_results),
-        "push_count": len(push_results),
-        "message": "Alert dispatched successfully." if total_results else "Alert simulated. No active email or push subscribers found. Subscribe above to receive live alerts."
+def _send_single_push(sub: dict, payload: str, vapid_claims: dict) -> dict:
+    endpoint = sub.get("endpoint", "")
+    if not endpoint:
+        return {"status": "failed", "error": "Missing endpoint"}
+
+    sub_info = {
+        "endpoint": endpoint,
+        "keys": {
+            "p256dh": sub.get("keys", {}).get("p256dh") if isinstance(sub.get("keys"), dict) else None,
+            "auth": sub.get("keys", {}).get("auth") if isinstance(sub.get("keys"), dict) else None
+        }
     }
 
+    if not sub_info["keys"]["p256dh"] or not sub_info["keys"]["auth"]:
+        push_store.remove_subscription(endpoint)
+        return {"endpoint": endpoint, "status": "failed", "type": "webpush", "error": "Incomplete encryption keys"}
 
-@router.get("/notifications/vapidPublicKey")
-def vapid_public_key():
-    if not config.VAPID_PUBLIC_KEY:
-        raise HTTPException(status_code=500, detail="VAPID_PUBLIC_KEY not configured on server.")
-    return {"publicKey": config.VAPID_PUBLIC_KEY}
-
-@router.get("/notifications/subscribers-count")
-def get_subscribers_count():
-    return push_store.count_subscriptions()
-
-@router.post("/notifications/subscribe")
-def subscribe_push(body: PushSubscription):
-    sub_dict = body.model_dump()
-    # Save to persistent disk store (remembers phones across restarts)
-    push_store.save_subscription(sub_dict)
-    
-    if sub_dict not in _memory_push_subscriptions:
-        _memory_push_subscriptions.append(sub_dict)
-    
-    if db.is_connected():
-        record = {
-            "endpoint": body.endpoint,
-            "p256dh": body.keys.p256dh,
-            "auth": body.keys.auth,
-            "created_at": datetime.now(timezone.utc).isoformat()
-        }
-        db.insert_push_subscription(record)
-    
-    return {"status": "subscribed", "device": body.device}
+    try:
+        webpush(
+            subscription_info=sub_info,
+            data=payload,
+            vapid_private_key=config.VAPID_PRIVATE_KEY,
+            vapid_claims=vapid_claims,
+            ttl=86400,
+            headers={"Urgency": "high"},
+            timeout=5
+        )
+        return {"endpoint": endpoint, "status": "sent", "type": "webpush", "device": sub.get("device", "Phone")}
+    except WebPushException as ex:
+        code = getattr(ex.response, "status_code", None) if hasattr(ex, "response") and ex.response is not None else None
+        # If subscription expired or was cancelled by user (404/410), evict it permanently
+        if code in [404, 410]:
+            push_store.remove_subscription(endpoint)
+        return {"endpoint": endpoint, "status": "failed", "type": "webpush", "error": str(ex), "code": code}
+    except Exception as ex:
+        return {"endpoint": endpoint, "status": "failed", "type": "webpush", "error": str(ex)}
 
 
 def _send_web_push_blast(message):
@@ -340,19 +335,68 @@ def _send_web_push_blast(message):
     else:
         payload = json.dumps({"title": "🚨 HIGH LANDSLIDE RISK ALERT", "body": str(message), "icon": "/icons/icon-192x192.png", "url": "/"})
     
+    if not subs:
+        return []
+
+    # Execute all push dispatches concurrently in parallel (fast delivery!)
     results = []
-    for sub in subs:
-        try:
-            webpush(
-                subscription_info=sub,
-                data=payload,
-                vapid_private_key=config.VAPID_PRIVATE_KEY,
-                vapid_claims=vapid_claims
-            )
-            results.append({"endpoint": sub["endpoint"], "status": "sent", "type": "webpush"})
-        except WebPushException as ex:
-            results.append({"endpoint": sub["endpoint"], "status": "failed", "type": "webpush", "error": str(ex)})
-        except Exception as ex:
-            results.append({"endpoint": sub.get("endpoint", "unknown"), "status": "failed", "type": "webpush", "error": str(ex)})
+    max_workers = min(len(subs), 15)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [executor.submit(_send_single_push, sub, payload, vapid_claims) for sub in subs]
+        for f in as_completed(futures):
+            try:
+                results.append(f.result())
+            except Exception as e:
+                results.append({"status": "failed", "error": str(e)})
+
     return results
 
+
+@router.post("/dispatch-email-blast")
+def dispatch_email_blast(body: BlastRequest):
+    # 1. Send Web Push FIRST (ultrafast, parallel, direct to phones)
+    push_results = _send_web_push_blast(body.message)
+    
+    # 2. Send email blast
+    email_results = _send_emailjs_blast(body.message, body.emails)
+    
+    total_results = push_results + email_results
+    return {
+        "status": "completed",
+        "results": total_results,
+        "email_count": len(email_results),
+        "push_count": len(push_results),
+        "message": f"Alert dispatched to {len(push_results)} phone(s)/device(s) and {len(email_results)} email(s)."
+    }
+
+@router.get("/notifications/vapidPublicKey")
+def vapid_public_key():
+    if not config.VAPID_PUBLIC_KEY:
+        raise HTTPException(status_code=500, detail="VAPID_PUBLIC_KEY not configured on server.")
+    return {"publicKey": config.VAPID_PUBLIC_KEY}
+
+
+@router.get("/notifications/subscribers-count")
+def get_subscribers_count():
+    return push_store.count_subscriptions()
+
+
+@router.post("/notifications/subscribe")
+def subscribe_push(body: PushSubscription):
+    sub_dict = body.model_dump()
+    # Save to persistent disk store (remembers phones permanently)
+    push_store.save_subscription(sub_dict)
+    
+    if sub_dict not in _memory_push_subscriptions:
+        _memory_push_subscriptions.append(sub_dict)
+    
+    if db.is_connected():
+        record = {
+            "endpoint": body.endpoint,
+            "p256dh": body.keys.p256dh,
+            "auth": body.keys.auth,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        db.insert_push_subscription(record)
+    
+    return {"status": "subscribed", "device": body.device}
