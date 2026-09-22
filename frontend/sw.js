@@ -1,4 +1,4 @@
-const CACHE_NAME = 'slopeguard-v1';
+const CACHE_NAME = 'slopeguard-v2';
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -11,7 +11,9 @@ const ASSETS_TO_CACHE = [
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(ASSETS_TO_CACHE);
+      return Promise.allSettled(
+        ASSETS_TO_CACHE.map((url) => cache.add(url).catch((err) => console.warn('Cache failed for:', url, err)))
+      );
     })
   );
   self.skipWaiting();
@@ -33,10 +35,14 @@ self.addEventListener('activate', (event) => {
   self.clients.claim();
 });
 
-// Fetch event: network first, fallback to cache
+// Fetch event: network first, fallback to cache (same-origin only)
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   
+  const url = new URL(event.request.url);
+  // Do not intercept external map tiles (CartoDB, Esri, Mapzen) or external APIs
+  if (url.origin !== self.location.origin) return;
+
   event.respondWith(
     fetch(event.request).catch(() => {
       return caches.match(event.request);

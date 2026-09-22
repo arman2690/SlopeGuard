@@ -196,15 +196,17 @@
           <h1 class="text-xl md:text-2xl font-semibold mb-1">Overview</h1>
           <p class="text-xs md:text-sm text-secondary mb-6 md:mb-8">AI-powered terrain analysis and risk monitoring.</p>
 
-          <div class="backdrop-blur-xl bg-white/[0.02] border border-white/10 p-6 md:p-8 rounded-3xl mb-8 flex flex-col md:flex-row items-center justify-between gap-6 relative shadow-2xl z-10 transition-transform duration-300 hover:scale-[1.01]">
-            <div class="absolute inset-0 bg-info/5"></div>
+          <div class="backdrop-blur-xl bg-white/[0.02] border border-white/10 p-6 md:p-8 rounded-3xl mb-8 flex flex-col lg:flex-row items-center justify-between gap-6 relative shadow-2xl z-10 transition-transform duration-300 hover:scale-[1.01]">
+            <div class="absolute inset-0 bg-info/5 rounded-3xl"></div>
             <div class="relative z-10 flex-1">
               <h3 class="text-sm font-medium text-info mb-1 flex items-center gap-2"><i data-lucide="bell-ring" class="w-4 h-4"></i> Public Early Warning Registry</h3>
-              <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
+              <p class="text-xs text-secondary">Subscribe via email or enable direct browser push notifications for real-time hazard alerts.</p>
             </div>
-            <div class="relative z-10 flex w-full md:w-auto gap-2">
-              <button onclick="subscribeToPush()" id="btn-push-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-2">
-                <i data-lucide="bell-ring" class="w-3 h-3 md:w-4 md:h-4"></i> Enable Web Push Alerts
+            <div class="relative z-10 flex flex-wrap w-full lg:w-auto items-center gap-2.5">
+              <input type="email" id="sub-contact" placeholder="Email Address" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full sm:w-48">
+              <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
+              <button onclick="subscribeToPush()" id="btn-push-subscribe" class="bg-surface2 border border-border hover:border-info text-primary hover:text-white px-4 py-2 rounded-lg text-xs font-medium transition-all whitespace-nowrap flex items-center gap-1.5">
+                <i data-lucide="bell" class="w-3.5 h-3.5 text-info"></i> Enable Push Alerts
               </button>
             </div>
           </div>
@@ -552,13 +554,18 @@
     }
 
     // Reset button color when typing a new email
-    document.getElementById('sub-contact').addEventListener('input', () => {
+    const subContactEl = document.getElementById('sub-contact');
+    if (subContactEl) {
+      subContactEl.addEventListener('input', () => {
         const btn = document.getElementById('btn-subscribe');
-        btn.disabled = false;
-        btn.innerHTML = 'Subscribe';
-        btn.classList.remove('bg-success', 'hover:bg-green-600');
-        btn.classList.add('bg-info', 'hover:bg-blue-600');
-    });
+        if (btn) {
+          btn.disabled = false;
+          btn.innerHTML = 'Subscribe';
+          btn.classList.remove('bg-success', 'hover:bg-green-600');
+          btn.classList.add('bg-info', 'hover:bg-blue-600');
+        }
+      });
+    }
 
     async function subscribeUser() {
       const input = document.getElementById('sub-contact').value.trim();
@@ -1244,6 +1251,8 @@
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/sw.js').then(reg => {
           console.log('SW registered!', reg);
+        }).catch(err => {
+          console.warn('SW registration skipped or failed:', err);
         });
       });
     }
