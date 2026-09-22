@@ -10,3 +10,5 @@ joblib==1.4.2
 python-multipart==0.0.9
 supabase==2.7.4
 twilio==9.3.2
+pywebpush==1.14.0
+cryptography==41.0.4

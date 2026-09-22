@@ -76,6 +76,10 @@
 
     button:focus { outline: none; }
   </style>
+
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#000000">
+  <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
 </head>
 <body class="bg-background text-primary h-screen flex overflow-hidden font-sans antialiased selection:bg-surface3 selection:text-white">
 
@@ -199,8 +203,9 @@
               <p class="text-xs text-secondary">Sign up to receive instant push notifications when critical landslide conditions are detected in your area.</p>
             </div>
             <div class="relative z-10 flex w-full md:w-auto gap-2">
-              <input type="email" id="sub-contact" placeholder="Email Address" class="bg-background border border-border rounded-lg px-3 py-2 text-xs text-primary outline-none focus:border-info w-full md:w-48">
-              <button onclick="subscribeUser()" id="btn-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap">Subscribe</button>
+              <button onclick="subscribeToPush()" id="btn-push-subscribe" class="bg-info hover:bg-blue-600 text-white px-4 py-2 rounded-lg text-xs font-medium transition-colors whitespace-nowrap flex items-center gap-2">
+                <i data-lucide="bell-ring" class="w-3 h-3 md:w-4 md:h-4"></i> Enable Web Push Alerts
+              </button>
             </div>
           </div>
         </div>
@@ -1231,6 +1236,68 @@
         toast.classList.add('translate-x-full', 'opacity-0');
         setTimeout(() => toast.remove(), 300);
       }, 5000);
+    }
+  </script>
+
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').then(reg => {
+          console.log('SW registered!', reg);
+        });
+      });
+    }
+
+    function urlB64ToUint8Array(base64String) {
+      const padding = '='.repeat((4 - base64String.length % 4) % 4);
+      const base64 = (base64String + padding)
+        .replace(/\-/g, '+')
+        .replace(/_/g, '/');
+      const rawData = window.atob(base64);
+      const outputArray = new Uint8Array(rawData.length);
+      for (let i = 0; i < rawData.length; ++i) {
+        outputArray[i] = rawData.charCodeAt(i);
+      }
+      return outputArray;
+    }
+
+    async function subscribeToPush() {
+      const btn = document.getElementById('btn-push-subscribe');
+      btn.innerHTML = 'Subscribing...';
+      const API_BASE = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1' ? 'http://127.0.0.1:8000/api' : 'https://slopeguard-36tz.onrender.com/api';
+      
+      try {
+        const swReg = await navigator.serviceWorker.ready;
+        const res = await fetch(`${API_BASE}/notifications/vapidPublicKey`);
+        if (!res.ok) throw new Error('VAPID key not configured on backend');
+        const { publicKey } = await res.json();
+        
+        const sub = await swReg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlB64ToUint8Array(publicKey)
+        });
+        
+        const subJSON = sub.toJSON();
+        const saveRes = await fetch(`${API_BASE}/notifications/subscribe`, {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            endpoint: subJSON.endpoint,
+            keys: subJSON.keys
+          })
+        });
+        
+        if (!saveRes.ok) throw new Error('Failed to save subscription to server');
+        
+        showToast('Subscribed!', 'You will now receive native push notifications.', 'success');
+        btn.innerHTML = 'Push Enabled';
+        btn.disabled = true;
+      } catch (e) {
+        console.error(e);
+        showToast('Error', e.message || 'Failed to subscribe to push notifications.', 'error');
+        btn.innerHTML = '<i data-lucide="bell-ring" class="w-3 h-3 md:w-4 md:h-4"></i> Enable Web Push Alerts';
+        lucide.createIcons();
+      }
     }
   </script>
 </body>

@@ -100,3 +100,13 @@ class SubscribeRequest(BaseModel):
 class BlastRequest(BaseModel):
     message: str
     emails: list[str] = []
+
+
+class PushSubscriptionKeys(BaseModel):
+    p256dh: str
+    auth: str
+
+
+class PushSubscription(BaseModel):
+    endpoint: str
+    keys: PushSubscriptionKeys

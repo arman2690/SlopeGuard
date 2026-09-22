@@ -4,6 +4,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, BackgroundTasks
+import json
+from pywebpush import webpush, WebPushException
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from ml.prediction import predict as ml_predict  # noqa: E402
@@ -11,7 +13,7 @@ from ml.features import FEATURES  # noqa: E402
 
 from ..schemas.schemas import (
     PredictRequest, PredictResponse, RiskZone, WeatherResponse,
-    Alert, AlertCreate, DataSourceStatus,
+    Alert, AlertCreate, DataSourceStatus, PushSubscription
 )
 from ..services import config, db, demo_data
 from ..data_sources import weather as weather_source
@@ -22,6 +24,7 @@ router = APIRouter()
 # In-memory fallback store for alerts created via POST when no DB is
 # connected. Resets on process restart — clearly a demo-mode limitation.
 _memory_alerts: list[dict] = []
+_memory_push_subscriptions = []
 
 
 @router.get("/health")
@@ -58,9 +61,20 @@ def predict(body: PredictRequest, background_tasks: BackgroundTasks):
     db.insert_prediction(record)  # no-op if DB not connected
 
     # AUTOMATED EMAIL TRIGGER
-    if result["risk_level"] in ["HIGH", "VERY_HIGH"] and _memory_subscribers:
-        auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district}, {body.state}. Immediate evacuation protocols recommended."
-        background_tasks.add_task(_send_emailjs_blast, auto_msg)
+    if result["risk_level"] in ["HIGH", "VERY_HIGH"]:
+        if _memory_subscribers:
+            auto_msg = f"AUTOMATED EMERGENCY ALERT: {result['risk_level']} landslide risk detected in {body.district}, {body.state}. Immediate evacuation protocols recommended."
+            background_tasks.add_task(_send_emailjs_blast, auto_msg)
+        
+        # Web Push Trigger
+        push_msg = json.dumps({
+            "title": f"{result['risk_level']} Risk Alert",
+            "body": f"Landslide risk detected in {body.district}, {body.state}.",
+            "icon": "/icons/icon-192x192.png",
+            "badge": "/icons/icon-192x192.png",
+            "url": "/"
+        })
+        background_tasks.add_task(_send_web_push_blast, push_msg)
 
     return {**result, "data_mode": config.data_mode()}
 
@@ -231,4 +245,60 @@ def dispatch_email_blast(body: BlastRequest):
     if not results:
         raise HTTPException(status_code=400, detail="No users are subscribed to receive alerts.")
     return {"status": "completed", "results": results}
+
+
+@router.get("/notifications/vapidPublicKey")
+def vapid_public_key():
+    if not config.VAPID_PUBLIC_KEY:
+        raise HTTPException(status_code=500, detail="VAPID_PUBLIC_KEY not configured on server.")
+    return {"publicKey": config.VAPID_PUBLIC_KEY}
+
+@router.post("/notifications/subscribe")
+def subscribe_push(body: PushSubscription):
+    sub_dict = body.model_dump()
+    if sub_dict not in _memory_push_subscriptions:
+        _memory_push_subscriptions.append(sub_dict)
+    
+    if db.is_connected():
+        record = {
+            "endpoint": body.endpoint,
+            "p256dh": body.keys.p256dh,
+            "auth": body.keys.auth,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+        db.insert_push_subscription(record)
+    
+    return {"status": "subscribed"}
+
+
+def _send_web_push_blast(message: str):
+    if not config.VAPID_PRIVATE_KEY or not config.VAPID_PUBLIC_KEY:
+        return []
+
+    vapid_claims = {"sub": config.VAPID_CLAIMS_EMAIL}
+    
+    subs = []
+    if db.is_connected():
+        db_subs = db.fetch_push_subscriptions() or []
+        for row in db_subs:
+            subs.append({
+                "endpoint": row["endpoint"],
+                "keys": {"p256dh": row["p256dh"], "auth": row["auth"]}
+            })
+    else:
+        subs = _memory_push_subscriptions
+        
+    results = []
+    for sub in subs:
+        try:
+            webpush(
+                subscription_info=sub,
+                data=message,
+                vapid_private_key=config.VAPID_PRIVATE_KEY,
+                vapid_claims=vapid_claims
+            )
+            results.append({"endpoint": sub["endpoint"], "status": "sent"})
+        except WebPushException as ex:
+            results.append({"endpoint": sub["endpoint"], "status": "failed", "error": str(ex)})
+    return results
 

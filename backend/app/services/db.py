@@ -78,3 +78,24 @@ def fetch_risk_zones():
     except Exception as e:
         _record_error(e)
         return None
+
+
+def fetch_push_subscriptions():
+    if not _client:
+        return None
+    try:
+        res = _client.table("push_subscriptions").select("*").execute()
+        return res.data
+    except Exception as e:
+        _record_error(e)
+        return None
+
+
+def insert_push_subscription(record: dict):
+    if not _client:
+        return None
+    try:
+        return _client.table("push_subscriptions").upsert(record, on_conflict="endpoint").execute()
+    except Exception as e:
+        _record_error(e)
+        return None

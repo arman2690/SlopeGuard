@@ -137,6 +137,15 @@ create table if not exists data_sources (
   updated_at timestamptz not null default now()
 );
 
+create table if not exists push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  endpoint text unique not null,
+  p256dh text not null,
+  auth text not null,
+  user_agent text,
+  created_at timestamptz not null default now()
+);
+
 -- Indexes
 create index if not exists idx_risk_predictions_location on risk_predictions (latitude, longitude);
 create index if not exists idx_risk_predictions_timestamp on risk_predictions (prediction_timestamp desc);

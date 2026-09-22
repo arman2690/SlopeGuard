@@ -13,6 +13,10 @@ BHUVAN_API_KEY = os.getenv("BHUVAN_API_KEY", "")
 BHUSANKET_API_KEY = os.getenv("BHUSANKET_API_KEY", "")
 GEE_SERVICE_ACCOUNT_JSON = os.getenv("GEE_SERVICE_ACCOUNT_JSON", "")
 
+VAPID_PRIVATE_KEY = os.getenv("VAPID_PRIVATE_KEY", "")
+VAPID_PUBLIC_KEY = os.getenv("VAPID_PUBLIC_KEY", "")
+VAPID_CLAIMS_EMAIL = os.getenv("VAPID_CLAIMS_EMAIL", "mailto:admin@slopeguard.in")
+
 CORS_ORIGINS = os.getenv("CORS_ORIGINS", "http://localhost:3000,http://127.0.0.1:5500").split(",")
 if "https://slope-guard-rust.vercel.app" not in CORS_ORIGINS:
     CORS_ORIGINS.append("https://slope-guard-rust.vercel.app")
